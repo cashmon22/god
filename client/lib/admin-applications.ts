@@ -1,5 +1,6 @@
 import type { AdminApplication, AdminApplicationStatus, AdminApplicationsResponse, VerificationStatus } from "@shared/admin-applications";
 import { supabase } from "./supabase";
+import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 import { apiRequest } from "./api-request";
 
 type ApplicationRow = {
@@ -108,15 +109,19 @@ export async function getAdminApplicationDetails(id: string) {
   return rowToApplication(data as ApplicationRow);
 }
 
-export function deleteAdminApplication(id: string) {
-  return apiRequest<{ id: string }>(`/api/admin/applications/${encodeURIComponent(id)}`, { method: "DELETE" });
+export async function deleteAdminApplication(id: string) {
+  const result = await apiRequest<{ id: string }>(`/api/admin/applications/${encodeURIComponent(id)}`, { method: "DELETE" });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
 
-export function updateAdminApplicationStatus(id: string, status: AdminApplicationStatus) {
-  return apiRequest<{ id: string; status: AdminApplicationStatus }>(`/api/admin/applications/${id}/status`, {
+export async function updateAdminApplicationStatus(id: string, status: AdminApplicationStatus) {
+  const result = await apiRequest<{ id: string; status: AdminApplicationStatus }>(`/api/admin/applications/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
 
 export async function updateAdminApplicationVerification(id: string, verificationStatus: VerificationStatus) {

@@ -45,6 +45,61 @@ function createServiceRoleSupabaseClient() {
 }
 //#endregion
 //#region server/routes/admin-dashboard.ts
+var getAdminReviewCounts = async (req, res) => {
+	const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+	if (!token) {
+		res.status(401).json({ error: "Authentication required" });
+		return;
+	}
+	const { data: userData, error: userError } = await supabase.auth.getUser(token);
+	if (userError || !userData.user) {
+		res.status(401).json({ error: "Authentication required" });
+		return;
+	}
+	if (userData.user.app_metadata?.role !== "admin") {
+		res.status(403).json({ error: "Administrator access required" });
+		return;
+	}
+	let service;
+	try {
+		service = createServiceRoleSupabaseClient();
+	} catch (error) {
+		console.error("[api] Review counts not configured", error);
+		res.status(503).json({ error: "Review counts are not configured on the server." });
+		return;
+	}
+	const [applications, interviews, deviceRequests, kyc] = await Promise.all([
+		service.from("applications").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "Under Review"),
+		service.from("interview_submissions").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "Under Review"),
+		service.from("payment_requests").select("id", {
+			count: "exact",
+			head: true
+		}).in("status", ["Pending Review", "Under Review"]),
+		service.from("contributor_kyc_submissions").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "pending")
+	]);
+	const failed = applications.error ?? interviews.error ?? deviceRequests.error ?? kyc.error;
+	if (failed) {
+		console.error("[api] Unable to load review counts.", failed);
+		res.status(500).json({ error: "Unable to load review counts." });
+		return;
+	}
+	res.setHeader("Cache-Control", "no-store");
+	res.json({
+		pendingApplications: applications.count ?? 0,
+		pendingInterviews: interviews.count ?? 0,
+		pendingDeviceRequests: deviceRequests.count ?? 0,
+		pendingKyc: kyc.count ?? 0
+	});
+};
 var getAdminDashboardStats = async (req, res) => {
 	const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 	if (!token) {
@@ -1137,7 +1192,6 @@ var mirrorApplication = async (req, res) => {
 	}
 	const applicationId = crypto.randomUUID();
 	const applicationValues = {
-		user_id: applicantId,
 		referral_owner_user_id: referralOwnerId,
 		id: applicationId,
 		submission_id: applicationId,
@@ -3413,40 +3467,24 @@ function createServer() {
 	app.get("/api/site/settings", getPublicSiteSettings);
 	app.get("/api/admin/site-settings", getAdminSiteSettings);
 	app.put("/api/admin/site-settings/:section", updateAdminSiteSettings);
-	app.get("/robots.txt", async (req, res) => {
-		try {
-			const { data, error } = await createServiceRoleSupabaseClient().from("site_admin_settings").select("seo, site").eq("id", true).maybeSingle();
-			if (error || !data) throw new Error("Settings unavailable");
-			const origin = sitemapOrigin(req, data.seo);
-			const robots = data.site.maintenanceMode === true || data.seo.allowIndexing !== true ? "User-agent: *\nDisallow: /\n" : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /trusted-vendor\nDisallow: /login\nSitemap: ${origin}/sitemap.xml\n`;
-			res.type("text/plain").send(robots);
-		} catch {
-			res.status(503).type("text/plain").send("User-agent: *\nDisallow: /\n");
-		}
+	app.get("/robots.txt", (_req, res) => {
+		res.type("text/plain").send("User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /dashboard\nDisallow: /trusted-vendor\nDisallow: /interview\nDisallow: /admin\nDisallow: /api\n\nSitemap: https://workforcecontributors.netlify.app/sitemap.xml\n");
 	});
-	app.get("/sitemap.xml", async (req, res) => {
-		try {
-			const { data, error } = await createServiceRoleSupabaseClient().from("site_admin_settings").select("seo, site").eq("id", true).maybeSingle();
-			if (error || !data) throw new Error("Settings unavailable");
-			const seo = data.seo;
-			if (data.site.maintenanceMode === true || seo.allowIndexing !== true) {
-				res.status(404).type("application/xml").send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
-				return;
-			}
-			const origin = sitemapOrigin(req, seo);
-			const urls = [
-				"/",
-				"/how-it-works",
-				"/payments",
-				"/success-stories",
-				"/faq",
-				"/contact",
-				"/apply"
-			].map((path) => `<url><loc>${xmlEscape(new URL(path, origin).toString())}</loc></url>`).join("");
-			res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
-		} catch {
-			res.status(503).type("application/xml").send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
-		}
+	app.get("/sitemap.xml", (_req, res) => {
+		const origin = "https://workforcecontributors.netlify.app";
+		const paths = [
+			"/",
+			"/how-it-works",
+			"/payments",
+			"/success-stories",
+			"/faq",
+			"/contact",
+			"/apply",
+			"/legal"
+		];
+		const lastmod = "2026-10-03";
+		const urls = paths.map((path) => `<url><loc>${xmlEscape(new URL(path, origin).toString())}</loc><lastmod>${lastmod}</lastmod></url>`).join("");
+		res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
 	});
 	app.use("/api/contributor", requireInterviewApproval);
 	app.use("/api/kyc", requireInterviewApproval);
@@ -3458,6 +3496,7 @@ function createServer() {
 	app.patch("/api/admin/payment-requests/:id/status", updatePaymentRequestStatus);
 	app.delete("/api/admin/payment-requests/:id", deletePaymentRequest);
 	app.get("/api/admin/dashboard-stats", getAdminDashboardStats);
+	app.get("/api/admin/review-counts", getAdminReviewCounts);
 	app.get("/api/admin/users", listAdminUsers);
 	app.post("/api/admin/users", createAdminUser);
 	app.get("/api/admin/users/:id/overview", getAdminContributorOverview);
@@ -3518,19 +3557,6 @@ function createServer() {
 	app.get("/api/contributor/tasks", listContributorTasks);
 	app.post("/api/contributor/tasks", startContributorTask);
 	return app;
-}
-function sitemapOrigin(req, seo) {
-	const configured = (typeof seo.canonicalUrl === "string" ? seo.canonicalUrl : "") || process.env.SITE_URL;
-	if (configured) {
-		const url = new URL(configured);
-		if (!["http:", "https:"].includes(url.protocol)) throw new Error("Invalid site origin");
-		return url.origin;
-	}
-	const host = req.get("host");
-	if (!host || !/^(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::\d{1,5})?$/i.test(host)) throw new Error("Invalid request host");
-	const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
-	const protocol = req.secure || forwardedProtocol === "https" ? "https" : "http";
-	return new URL(`${protocol}://${host}`).origin;
 }
 function xmlEscape(value) {
 	return value.replace(/[&<>"']/g, (character) => ({

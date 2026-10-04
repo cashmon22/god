@@ -1,4 +1,5 @@
 import { apiRequest } from "./api-request";
+import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
 export type InterviewQuestion = { id: string; prompt: string; position: number; created_at: string };
 export type InterviewAnswer = { questionId: string; question: string; answer: string };
@@ -32,11 +33,13 @@ export function listAdminInterviews() {
   return apiRequest<{ submissions: InterviewSubmission[] }>("/api/admin/interviews");
 }
 
-export function updateInterviewStatus(id: string, status: "Approved" | "Rejected") {
-  return apiRequest<{ id: string; status: InterviewSubmission["status"] }>(`/api/admin/interviews/${encodeURIComponent(id)}/status`, {
+export async function updateInterviewStatus(id: string, status: "Approved" | "Rejected") {
+  const result = await apiRequest<{ id: string; status: InterviewSubmission["status"] }>(`/api/admin/interviews/${encodeURIComponent(id)}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status }),
   });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
 
 export function createInterviewQuestion(prompt: string) {

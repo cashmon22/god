@@ -1,14 +1,12 @@
-User-agent: Googlebot
-Allow: /
-
-User-agent: Bingbot
-Allow: /
-
-User-agent: Twitterbot
-Allow: /
-
-User-agent: facebookexternalhit
-Allow: /
-
 User-agent: *
 Allow: /
+
+Disallow: /login
+Disallow: /dashboard
+Disallow: /trusted-vendor
+Disallow: /interview
+Disallow: /admin
+Disallow: /api
+
+
+Sitemap: https://workforcecontributors.netlify.app/sitemap.xml

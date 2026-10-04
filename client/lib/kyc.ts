@@ -1,5 +1,6 @@
 import { apiRequest } from "./api-request";
 import { supabase } from "./supabase";
+import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
 export type KycStatus = "draft" | "pending" | "approved" | "rejected";
 export type KycIdentityInformation = { fullName: string; dateOfBirth: string; documentNumber: string; expiryDate: string };
@@ -80,8 +81,10 @@ export function getAdminKycSubmission(id: string) {
   return apiRequest<{ submission: KycSubmission }>(`/api/admin/kyc/${id}`);
 }
 
-export function reviewKyc(id: string, status: "approved" | "rejected", rejectionReason?: string) {
-  return apiRequest<{ status: "approved" | "rejected" }>(`/api/admin/kyc/${id}/review`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason }) });
+export async function reviewKyc(id: string, status: "approved" | "rejected", rejectionReason?: string) {
+  const result = await apiRequest<{ status: "approved" | "rejected" }>(`/api/admin/kyc/${id}/review`, { method: "PATCH", body: JSON.stringify({ status, rejectionReason }) });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
 
 export function getAdminKycInstructions() {

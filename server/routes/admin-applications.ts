@@ -227,7 +227,6 @@ export const mirrorApplication: RequestHandler = async (req, res) => {
 
   const applicationId = crypto.randomUUID();
   const applicationValues = {
-    user_id: applicantId,
     referral_owner_user_id: referralOwnerId,
     id: applicationId,
     submission_id: applicationId,

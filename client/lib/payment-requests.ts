@@ -1,5 +1,6 @@
 import type { CreatePaymentRequestInput, PaymentRequest, PaymentRequestStatus } from "@shared/payment-requests";
 import { supabase } from "./supabase";
+import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const { data: { session } } = await supabase.auth.getSession();
@@ -31,15 +32,19 @@ export function listPaymentRequests() {
   return request<PaymentRequest[]>("/api/payment-requests");
 }
 
-export function updatePaymentRequestStatus(id: string, status: PaymentRequestStatus, rejectionReason?: string) {
-  return request<{ id: string; status: PaymentRequestStatus }>(`/api/admin/payment-requests/${id}/status`, {
+export async function updatePaymentRequestStatus(id: string, status: PaymentRequestStatus, rejectionReason?: string) {
+  const result = await request<{ id: string; status: PaymentRequestStatus }>(`/api/admin/payment-requests/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, rejectionReason }),
   });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
 
-export function deletePaymentRequest(id: string) {
-  return request<{ id: string }>(`/api/admin/payment-requests/${id}`, {
+export async function deletePaymentRequest(id: string) {
+  const result = await request<{ id: string }>(`/api/admin/payment-requests/${id}`, {
     method: "DELETE",
   });
+  notifyAdminReviewCountsChanged();
+  return result;
 }
