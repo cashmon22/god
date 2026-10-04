@@ -45,6 +45,61 @@ function createServiceRoleSupabaseClient() {
 }
 //#endregion
 //#region server/routes/admin-dashboard.ts
+var getAdminReviewCounts = async (req, res) => {
+	const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+	if (!token) {
+		res.status(401).json({ error: "Authentication required" });
+		return;
+	}
+	const { data: userData, error: userError } = await supabase.auth.getUser(token);
+	if (userError || !userData.user) {
+		res.status(401).json({ error: "Authentication required" });
+		return;
+	}
+	if (userData.user.app_metadata?.role !== "admin") {
+		res.status(403).json({ error: "Administrator access required" });
+		return;
+	}
+	let service;
+	try {
+		service = createServiceRoleSupabaseClient();
+	} catch (error) {
+		console.error("[api] Review counts not configured", error);
+		res.status(503).json({ error: "Review counts are not configured on the server." });
+		return;
+	}
+	const [applications, interviews, deviceRequests, kyc] = await Promise.all([
+		service.from("applications").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "Under Review"),
+		service.from("interview_submissions").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "Under Review"),
+		service.from("payment_requests").select("id", {
+			count: "exact",
+			head: true
+		}).in("status", ["Pending Review", "Under Review"]),
+		service.from("contributor_kyc_submissions").select("id", {
+			count: "exact",
+			head: true
+		}).eq("status", "pending")
+	]);
+	const failed = applications.error ?? interviews.error ?? deviceRequests.error ?? kyc.error;
+	if (failed) {
+		console.error("[api] Unable to load review counts.", failed);
+		res.status(500).json({ error: "Unable to load review counts." });
+		return;
+	}
+	res.setHeader("Cache-Control", "no-store");
+	res.json({
+		pendingApplications: applications.count ?? 0,
+		pendingInterviews: interviews.count ?? 0,
+		pendingDeviceRequests: deviceRequests.count ?? 0,
+		pendingKyc: kyc.count ?? 0
+	});
+};
 var getAdminDashboardStats = async (req, res) => {
 	const token = req.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 	if (!token) {
@@ -3441,6 +3496,7 @@ function createServer() {
 	app.patch("/api/admin/payment-requests/:id/status", updatePaymentRequestStatus);
 	app.delete("/api/admin/payment-requests/:id", deletePaymentRequest);
 	app.get("/api/admin/dashboard-stats", getAdminDashboardStats);
+	app.get("/api/admin/review-counts", getAdminReviewCounts);
 	app.get("/api/admin/users", listAdminUsers);
 	app.post("/api/admin/users", createAdminUser);
 	app.get("/api/admin/users/:id/overview", getAdminContributorOverview);

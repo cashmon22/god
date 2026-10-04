@@ -22,18 +22,20 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { SkeletonStatCard } from "@/components/skeletons";
-import { getAdminDashboardStats } from "@/lib/admin-dashboard";
+import { ADMIN_REVIEW_COUNTS_CHANGED_EVENT, getAdminDashboardStats, getAdminReviewCounts, type AdminReviewCounts } from "@/lib/admin-dashboard";
 import NotificationCenter from "@/components/NotificationCenter";
 import { PageTransition } from "@/components/PageTransition";
 import { useUnreadMessageCount } from "@/lib/notifications";
 
-const navigation = [
+type ReviewCountKey = keyof AdminReviewCounts;
+
+const navigation: Array<{ label: string; href: string; icon: typeof LayoutDashboard; end?: boolean; countKey?: ReviewCountKey }> = [
   { label: "Dashboard", href: "/admin", icon: LayoutDashboard, end: true },
   { label: "Users", href: "/admin/users", icon: Users },
-  { label: "Applications", href: "/admin/applications", icon: BriefcaseBusiness },
-  { label: "Interview Management", href: "/admin/interviews", icon: ClipboardList },
-  { label: "Device Requests", href: "/admin/device-requests", icon: ClipboardList },
-  { label: "KYC Verification", href: "/admin/kyc", icon: ShieldCheck },
+  { label: "Applications", href: "/admin/applications", icon: BriefcaseBusiness, countKey: "pendingApplications" },
+  { label: "Interview Management", href: "/admin/interviews", icon: ClipboardList, countKey: "pendingInterviews" },
+  { label: "Device Requests", href: "/admin/device-requests", icon: ClipboardList, countKey: "pendingDeviceRequests" },
+  { label: "KYC Verification", href: "/admin/kyc", icon: ShieldCheck, countKey: "pendingKyc" },
   { label: "Messages", href: "/admin/messages", icon: MessageSquare },
   { label: "Devices", href: "/admin/devices", icon: Monitor },
   { label: "SEO Center", href: "/admin/seo", icon: SearchCheck },
@@ -80,7 +82,26 @@ export default function AdminPanel() {
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [reviewCounts, setReviewCounts] = useState<AdminReviewCounts | null>(null);
   const { count: unreadMessages } = useUnreadMessageCount("admin");
+
+  useEffect(() => {
+    if (!session || session.user.app_metadata?.role !== "admin") return;
+    let active = true;
+    const refreshCounts = () => {
+      void getAdminReviewCounts().then((counts) => {
+        if (active) setReviewCounts(counts);
+      }).catch(() => {});
+    };
+    refreshCounts();
+    const interval = window.setInterval(refreshCounts, 30_000);
+    window.addEventListener(ADMIN_REVIEW_COUNTS_CHANGED_EVENT, refreshCounts);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener(ADMIN_REVIEW_COUNTS_CHANGED_EVENT, refreshCounts);
+    };
+  }, [session]);
 
   if (isLoading) {
     return <div className="flex min-h-screen items-center justify-center bg-[#f8f9fa] text-sm font-semibold text-navy dark:text-slate-100">Checking your secure session...</div>;
@@ -114,11 +135,14 @@ export default function AdminPanel() {
         <div className="px-4 py-7">
           <p className="px-3 text-[10px] font-bold uppercase tracking-[0.18em] text-white/35">Workspace</p>
           <nav className="mt-3 space-y-1" aria-label="Admin navigation">
-            {navigation.map(({ label, href, icon: Icon, end }) => (
+            {navigation.map(({ label, href, icon: Icon, end, countKey }) => (
               <NavLink key={label} to={href} end={end} onClick={() => setMobileNavOpen(false)} className={({ isActive }) => `group flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold transition ${isActive ? "bg-orange text-navy dark:text-slate-100 shadow-[0_6px_18px_rgba(255,153,0,0.18)]" : "text-white/65 hover:bg-white/[0.07] hover:text-white"}`}>
-                <Icon size={18} strokeWidth={1.9} /><span>{label}</span>
-                {label === "Messages" && unreadMessages > 0 && <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-orange px-1.5 text-[10px] font-extrabold text-navy dark:text-slate-100">{unreadMessages}</span>}
-                <ChevronRight size={15} className="ml-auto opacity-0 transition group-[.bg-orange]:opacity-60" />
+                {({ isActive }) => {
+                  const count = countKey ? reviewCounts?.[countKey] ?? 0 : label === "Messages" ? unreadMessages : 0;
+                  return <><Icon size={18} strokeWidth={1.9} /><span className="min-w-0 flex-1 truncate">{label}</span>
+                    {count > 0 && <span aria-label={`${count} ${label === "Messages" ? "unread messages" : "pending items"}`} className={`flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-extrabold ${isActive ? "bg-navy text-white" : "bg-orange text-navy"}`}>{count > 99 ? "99+" : count}</span>}
+                    <ChevronRight size={15} className="ml-auto shrink-0 opacity-0 transition group-[.bg-orange]:opacity-60" /></>;
+                }}
               </NavLink>
             ))}
           </nav>
