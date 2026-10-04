@@ -3,7 +3,6 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/auth";
 import {
   ArrowRight,
-  Bell,
   Check,
   ChevronRight,
   BriefcaseBusiness,
@@ -28,6 +27,7 @@ import { supabase } from "@/lib/supabase";
 import { listPaymentRequests } from "@/lib/payment-requests";
 import type { PaymentRequest } from "@shared/payment-requests";
 import VendorChat from "@/components/dashboard/VendorChat";
+import NotificationCenter from "@/components/NotificationCenter";
 
 type AvailableDeviceRecord = {
   id: string;
@@ -143,12 +143,6 @@ export function AuthenticatedVendorSidebar({
     <>
       <div className="border-b border-slate-200 px-5 py-5">
         <ContributorLogo dark />
-        <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">
-          Contributor workspace
-        </p>
-        <p className="mt-1 text-sm font-extrabold text-navy">
-          Amazon Contributor Program
-        </p>
       </div>
 
       <nav
@@ -224,7 +218,7 @@ export function AuthenticatedVendorSidebar({
 
 function SectionEyebrow({ children }: { children: string }) {
   return (
-    <p className="mb-3 text-xs font-bold uppercase tracking-[0.2em] text-orange">
+    <p className="mb-3 text-[10px] font-bold uppercase tracking-[0.18em] text-orange">
       {children}
     </p>
   );
@@ -281,14 +275,7 @@ export function AuthenticatedVendorHeader({
         </div>
 
         <div className="flex items-center gap-3 sm:gap-5">
-          <Link
-            to="/dashboard"
-            aria-label="View notifications"
-            className="relative rounded-md p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
-          >
-            <Bell size={18} />
-            <span className="absolute right-1.5 top-1.5 h-1.5 w-1.5 rounded-full bg-orange" />
-          </Link>
+          <NotificationCenter variant="user" />
 
           <div className="hidden h-7 border-l border-white/15 sm:block" />
 
@@ -817,9 +804,7 @@ export default function TrustedVendor() {
             mobileNavOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="flex h-[72px] items-center justify-between border-b border-slate-200 px-5">
-            <ContributorLogo dark />
-
+          <div className="flex items-center justify-end border-b border-slate-200 px-3 py-2">
             <button
               type="button"
               aria-label="Close contributor navigation"
@@ -844,7 +829,7 @@ export default function TrustedVendor() {
               <div className="max-w-[760px]">
                 <SectionEyebrow>Trusted Vendor</SectionEyebrow>
 
-                <h1 className="text-[42px] font-extrabold leading-[1.06] tracking-[-0.045em] sm:text-[58px]">
+                <h1 className="text-[26px] font-extrabold leading-tight tracking-[-0.04em] sm:text-[32px]">
                   Amazon Authorized{" "}
                   <span className="text-orange">Work Devices</span>
                 </h1>
@@ -918,7 +903,7 @@ export default function TrustedVendor() {
                 <div>
                   <SectionEyebrow>Available inventory</SectionEyebrow>
 
-                  <h2 className="section-title">
+                  <h2 className="text-[20px] font-extrabold tracking-[-0.02em] text-navy sm:text-[24px]">
                     Choose your supported device
                   </h2>
 
@@ -1027,7 +1012,7 @@ export default function TrustedVendor() {
               <div>
                 <SectionEyebrow>Need assistance?</SectionEyebrow>
 
-                <h2 className="text-[28px] font-extrabold tracking-[-0.035em] sm:text-[34px]">
+                <h2 className="text-[20px] font-extrabold tracking-[-0.02em] sm:text-[24px]">
                   Talk with the trusted vendor
                 </h2>
 

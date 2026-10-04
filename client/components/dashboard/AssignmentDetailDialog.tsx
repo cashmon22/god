@@ -28,7 +28,7 @@ export default function AssignmentDetailDialog({
         <div className="absolute -right-20 -top-20 h-48 w-48 rounded-full bg-orange/10 blur-3xl" />
         <header className="relative flex items-start justify-between gap-4 border-b border-slate-100 bg-[#fbfcfd] p-5 sm:p-7">
           <div className="min-w-0">
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-orange">Assignment details</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange">Assignment details</p>
             <h2 id="assignment-detail-title" className="mt-2 text-xl font-extrabold tracking-[-0.03em] text-navy sm:text-2xl">{assignment.title}</h2>
             <span className="mt-3 inline-flex rounded-md bg-orange/10 px-2.5 py-1 text-[10px] font-extrabold text-orange">{assignment.category}</span>
           </div>

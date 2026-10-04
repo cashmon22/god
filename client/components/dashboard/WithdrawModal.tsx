@@ -42,7 +42,9 @@ export default function WithdrawModal({
   onContactVendor,
   onVerifyKyc,
 }: WithdrawModalProps) {
-  const [step, setStep] = useState<Step>(!deviceVerified ? "device-blocked" : kycVerified ? "method" : "kyc-blocked");
+  // The withdrawal form is always shown first. Device and KYC checks run only
+  // when the contributor submits the withdrawal (see handleContinue).
+  const [step, setStep] = useState<Step>("method");
 
   // Crypto form state
   const [cryptoNetwork, setCryptoNetwork] = useState("");
@@ -57,6 +59,7 @@ export default function WithdrawModal({
   const [swiftCode, setSwiftCode] = useState("");
 
   const handleContinue = () => {
+    // Security checks run in order on submit: device verification, then KYC.
     if (!deviceVerified) {
       setStep("device-blocked");
       return;
@@ -256,7 +259,7 @@ export default function WithdrawModal({
                   onClick={handleContinue}
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-orange px-5 py-3 text-sm font-extrabold text-navy shadow-[0_4px_14px_rgba(255,153,0,0.18)] transition hover:-translate-y-0.5 hover:bg-orange-light"
                 >
-                  Continue <ArrowRight size={16} />
+                  Withdraw <ArrowRight size={16} />
                 </button>
               </div>
             </div>
@@ -345,7 +348,7 @@ export default function WithdrawModal({
                   onClick={handleContinue}
                   className="inline-flex items-center justify-center gap-2 rounded-md bg-orange px-5 py-3 text-sm font-extrabold text-navy shadow-[0_4px_14px_rgba(255,153,0,0.18)] transition hover:-translate-y-0.5 hover:bg-orange-light"
                 >
-                  Continue <ArrowRight size={16} />
+                  Withdraw <ArrowRight size={16} />
                 </button>
               </div>
             </div>

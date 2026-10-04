@@ -96,7 +96,7 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
 
       <section className="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="profile-completion-title">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-orange">Profile completion</p><h2 id="profile-completion-title" className="mt-1 text-sm font-extrabold text-navy">{completedFields} of 2 important details complete</h2></div>
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange">Profile completion</p><h2 id="profile-completion-title" className="mt-1 text-sm font-extrabold text-navy">{completedFields} of 2 important details complete</h2></div>
           <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[10px] font-extrabold ${missingFields.length ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}><CheckCircle2 size={13} />{missingFields.length ? `${missingFields.length} item${missingFields.length === 1 ? "" : "s"} to complete` : "Profile complete"}</span>
         </div>
         <div className="mt-4 h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-label="Profile completion" aria-valuemin={0} aria-valuemax={2} aria-valuenow={completedFields}><div className="h-full rounded-full bg-orange transition-all" style={{ width: `${completedFields * 50}%` }} /></div>
