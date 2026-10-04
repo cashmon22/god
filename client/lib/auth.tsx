@@ -13,6 +13,11 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function isSessionRevokedError(error: unknown) {
+  if (typeof error !== "object" || error === null || !("code" in error)) return false;
+  return ["refresh_token_not_found", "refresh_token_already_used", "session_expired"].includes(String(error.code));
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -22,15 +27,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let receivedResolvedAuthEvent = false;
     let mounted = true;
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
-      if (event !== "INITIAL_SESSION" || nextSession) receivedResolvedAuthEvent = true;
+      if (event === "INITIAL_SESSION" && !nextSession) return;
+      receivedResolvedAuthEvent = true;
       setSession(nextSession);
-      if (event !== "INITIAL_SESSION" || nextSession) setAuthError(false);
+      setAuthError(false);
       setIsLoading(false);
     });
     void supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
       if (!mounted) return;
       if (error) {
-        if (!receivedResolvedAuthEvent) setAuthError(true);
+        if (!receivedResolvedAuthEvent) {
+          setSession(null);
+          setAuthError(!isSessionRevokedError(error));
+        }
       } else if (!receivedResolvedAuthEvent) {
         setSession(currentSession);
         setAuthError(false);
@@ -54,8 +63,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: { session: currentSession }, error } = await supabase.auth.getSession();
       if (error) throw error;
       setSession(currentSession);
-    } catch {
-      setAuthError(true);
+    } catch (error) {
+      if (isSessionRevokedError(error)) {
+        setSession(null);
+        setAuthError(false);
+      } else {
+        setAuthError(true);
+      }
     } finally {
       setIsLoading(false);
     }
