@@ -1137,7 +1137,6 @@ var mirrorApplication = async (req, res) => {
 	}
 	const applicationId = crypto.randomUUID();
 	const applicationValues = {
-		user_id: applicantId,
 		referral_owner_user_id: referralOwnerId,
 		id: applicationId,
 		submission_id: applicationId,
@@ -3413,40 +3412,24 @@ function createServer() {
 	app.get("/api/site/settings", getPublicSiteSettings);
 	app.get("/api/admin/site-settings", getAdminSiteSettings);
 	app.put("/api/admin/site-settings/:section", updateAdminSiteSettings);
-	app.get("/robots.txt", async (req, res) => {
-		try {
-			const { data, error } = await createServiceRoleSupabaseClient().from("site_admin_settings").select("seo, site").eq("id", true).maybeSingle();
-			if (error || !data) throw new Error("Settings unavailable");
-			const origin = sitemapOrigin(req, data.seo);
-			const robots = data.site.maintenanceMode === true || data.seo.allowIndexing !== true ? "User-agent: *\nDisallow: /\n" : `User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /dashboard\nDisallow: /trusted-vendor\nDisallow: /login\nSitemap: ${origin}/sitemap.xml\n`;
-			res.type("text/plain").send(robots);
-		} catch {
-			res.status(503).type("text/plain").send("User-agent: *\nDisallow: /\n");
-		}
+	app.get("/robots.txt", (_req, res) => {
+		res.type("text/plain").send("User-agent: *\nAllow: /\nDisallow: /login\nDisallow: /dashboard\nDisallow: /trusted-vendor\nDisallow: /interview\nDisallow: /admin\nDisallow: /api\n\nSitemap: https://workforcecontributors.netlify.app/sitemap.xml\n");
 	});
-	app.get("/sitemap.xml", async (req, res) => {
-		try {
-			const { data, error } = await createServiceRoleSupabaseClient().from("site_admin_settings").select("seo, site").eq("id", true).maybeSingle();
-			if (error || !data) throw new Error("Settings unavailable");
-			const seo = data.seo;
-			if (data.site.maintenanceMode === true || seo.allowIndexing !== true) {
-				res.status(404).type("application/xml").send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
-				return;
-			}
-			const origin = sitemapOrigin(req, seo);
-			const urls = [
-				"/",
-				"/how-it-works",
-				"/payments",
-				"/success-stories",
-				"/faq",
-				"/contact",
-				"/apply"
-			].map((path) => `<url><loc>${xmlEscape(new URL(path, origin).toString())}</loc></url>`).join("");
-			res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
-		} catch {
-			res.status(503).type("application/xml").send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\"></urlset>");
-		}
+	app.get("/sitemap.xml", (_req, res) => {
+		const origin = "https://workforcecontributors.netlify.app";
+		const paths = [
+			"/",
+			"/how-it-works",
+			"/payments",
+			"/success-stories",
+			"/faq",
+			"/contact",
+			"/apply",
+			"/legal"
+		];
+		const lastmod = "2026-10-03";
+		const urls = paths.map((path) => `<url><loc>${xmlEscape(new URL(path, origin).toString())}</loc><lastmod>${lastmod}</lastmod></url>`).join("");
+		res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
 	});
 	app.use("/api/contributor", requireInterviewApproval);
 	app.use("/api/kyc", requireInterviewApproval);
@@ -3518,19 +3501,6 @@ function createServer() {
 	app.get("/api/contributor/tasks", listContributorTasks);
 	app.post("/api/contributor/tasks", startContributorTask);
 	return app;
-}
-function sitemapOrigin(req, seo) {
-	const configured = (typeof seo.canonicalUrl === "string" ? seo.canonicalUrl : "") || process.env.SITE_URL;
-	if (configured) {
-		const url = new URL(configured);
-		if (!["http:", "https:"].includes(url.protocol)) throw new Error("Invalid site origin");
-		return url.origin;
-	}
-	const host = req.get("host");
-	if (!host || !/^(?:[a-z0-9.-]+|\[[a-f0-9:]+\])(?::\d{1,5})?$/i.test(host)) throw new Error("Invalid request host");
-	const forwardedProtocol = req.get("x-forwarded-proto")?.split(",")[0]?.trim();
-	const protocol = req.secure || forwardedProtocol === "https" ? "https" : "http";
-	return new URL(`${protocol}://${host}`).origin;
 }
 function xmlEscape(value) {
 	return value.replace(/[&<>"']/g, (character) => ({
