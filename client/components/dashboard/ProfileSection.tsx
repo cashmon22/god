@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { Link } from "react-router-dom";
 import { openCookiePreferences } from "@/components/CookiePrivacyControls";
 import KycSection from "@/components/dashboard/KycSection";
@@ -115,20 +116,29 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
     }
     setIsChangingPassword(true);
     try {
-      const { error: verificationError } = await supabase.auth.signInWithPassword({ email, password: currentPassword });
+      const verifier = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      });
+      const { error: verificationError } = await verifier.auth.signInWithPassword({ email, password: currentPassword });
       if (verificationError) {
         setPasswordError("Your current password could not be verified.");
         return;
       }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
       if (error) {
-        setPasswordError(error.message || "Unable to update your password. Please try again.");
+        setPasswordError(error.code === "reauthentication_needed"
+          ? "For your security, a fresh authentication check is required before changing your password. You remain signed in; sign in again and retry."
+          : error.message || "Unable to update your password. Please try again.");
         return;
       }
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-      setPasswordMessage("Your password has been changed.");
+      setPasswordMessage("Password changed successfully.");
     } catch {
       setPasswordError("Unable to update your password. Please try again.");
     } finally {

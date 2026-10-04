@@ -82,6 +82,7 @@ export default function AdminPanel() {
   const navigate = useNavigate();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState("");
   const [reviewCounts, setReviewCounts] = useState<AdminReviewCounts | null>(null);
   const { count: unreadMessages } = useUnreadMessageCount("admin");
 
@@ -118,8 +119,19 @@ export default function AdminPanel() {
   const handleLogout = async () => {
     if (isSigningOut) return;
     setIsSigningOut(true);
-    await signOut();
-    navigate("/login", { replace: true });
+    setSignOutError("");
+    try {
+      const { error } = await signOut();
+      if (error) {
+        setSignOutError("Unable to sign out. Your session is still active; please try again.");
+        return;
+      }
+      navigate("/login", { replace: true });
+    } catch {
+      setSignOutError("Unable to sign out. Your session is still active; please try again.");
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   return (
@@ -163,6 +175,7 @@ export default function AdminPanel() {
           <div className="flex items-center gap-3"><button type="button" className="rounded-lg border border-slate-200 p-2 text-navy dark:text-slate-100 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label="Open navigation"><Menu size={19} /></button><div><p className="hidden text-[10px] font-bold uppercase tracking-[0.18em] text-orange sm:block">Administrator workspace</p><h1 className="text-lg font-extrabold text-navy dark:text-slate-100 sm:mt-0.5 sm:text-xl">{location.pathname === "/admin" ? "Dashboard" : navigation.find((item) => item.href === location.pathname)?.label || "Admin Portal"}</h1></div></div>
           <div className="flex items-center gap-2 sm:gap-4"><button type="button" className="hidden rounded-lg border border-slate-200 p-2.5 text-slate-400 transition hover:border-orange/40 hover:text-orange sm:block" aria-label="Search"><Search size={17} /></button><NotificationCenter variant="admin" /><span className="hidden h-7 w-px bg-slate-200 sm:block" /><button type="button" onClick={handleLogout} disabled={isSigningOut} className="hidden items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-navy transition hover:border-orange/40 hover:text-orange disabled:opacity-50 sm:flex dark:border-slate-700 dark:text-slate-100"><LogOut size={15} /> {isSigningOut ? "Signing out..." : "Sign out"}</button><span className="flex h-9 w-9 items-center justify-center rounded-full bg-navy text-xs font-extrabold text-white">{initials}</span></div>
         </header>
+        {signOutError && <p className="mx-4 mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 sm:mx-7 lg:mx-10" role="alert">{signOutError}</p>}
         <main className="mx-auto max-w-[1440px] px-4 py-7 sm:px-7 sm:py-9 lg:px-10 lg:py-11">
           <PageTransition key={location.pathname}>
             <Outlet />
