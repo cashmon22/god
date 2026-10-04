@@ -1,49 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppNotification } from "@shared/notifications";
+import { apiRequest } from "./api-request";
 import { supabase } from "./supabase";
 import { listConversations } from "./vendor-messages";
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (!session)
-    throw new Error("Your secure session has expired. Please sign in again.");
-
-  const response = await fetch(path, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${session.access_token}`,
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-  });
-  const payload = (await response.json().catch(() => null)) as
-    | { error?: string }
-    | T
-    | null;
-  if (!response.ok) {
-    throw new Error(
-      payload && typeof payload === "object" && "error" in payload
-        ? payload.error
-        : "Unable to complete the request.",
-    );
-  }
-  return payload as T;
-}
-
 export function listNotifications() {
-  return request<AppNotification[]>("/api/notifications");
+  return apiRequest<AppNotification[]>("/api/notifications");
 }
 
 export function markNotificationRead(id: string) {
-  return request<{ success: boolean }>(`/api/notifications/${id}/read`, {
+  return apiRequest<{ success: boolean }>(`/api/notifications/${id}/read`, {
     method: "PATCH",
   });
 }
 
 export function markAllNotificationsRead() {
-  return request<{ success: boolean }>("/api/notifications/read-all", {
+  return apiRequest<{ success: boolean }>("/api/notifications/read-all", {
     method: "PATCH",
   });
 }
