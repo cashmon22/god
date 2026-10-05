@@ -23,13 +23,12 @@ function SectionEyebrow({ children }: { children: string }) {
 export default function Login() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { session, isLoading, signIn } = useAuth();
+  const { session, isLoading, authError: sessionInitError, retrySession, signIn } = useAuth();
   const redirectPath = (location.state as { from?: string } | null)?.from ?? "/dashboard";
   const isAdministrator = session?.user.app_metadata?.role === "admin";
   const destination = isAdministrator ? "/admin" : redirectPath.startsWith("/admin") ? "/dashboard" : redirectPath;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [authError, setAuthError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -83,7 +82,8 @@ export default function Login() {
               <form className="mt-7 space-y-5" onSubmit={handleSubmit}>
                 <label className="block"><span className="text-xs font-bold text-navy">Email Address</span><div className="relative mt-2"><Mail size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input required id="contributor-email" type="email" autoComplete="username" value={email} onChange={(event) => { setEmail(event.target.value); setAuthError(""); }} placeholder="Enter your email address" className="h-12 w-full rounded-md border border-slate-200 bg-[#fbfcfd] pl-10 pr-3 text-sm text-navy outline-none transition placeholder:text-slate-400 focus:border-orange focus:ring-2 focus:ring-orange/10" /></div></label>
                 <label className="block"><span className="text-xs font-bold text-navy">Password</span><div className="relative mt-2"><KeyRound size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" /><input required id="contributor-password" type={showPassword ? "text" : "password"} autoComplete="current-password" value={password} onChange={(event) => { setPassword(event.target.value); setAuthError(""); }} placeholder="Enter your password" className="h-12 w-full rounded-md border border-slate-200 bg-[#fbfcfd] pl-10 pr-11 text-sm text-navy outline-none transition placeholder:text-slate-400 focus:border-orange focus:ring-2 focus:ring-orange/10" /><button type="button" onClick={() => setShowPassword((current) => !current)} aria-label={showPassword ? "Hide password" : "Show password"} className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 transition hover:text-navy">{showPassword ? <EyeOff size={17} /> : <Eye size={17} />}</button></div></label>
-                <div className="flex flex-col justify-between gap-3 text-xs sm:flex-row sm:items-center"><label className="flex items-center gap-2 font-semibold text-slate-500"><input type="checkbox" checked={rememberMe} onChange={(event) => setRememberMe(event.target.checked)} className="h-4 w-4 rounded border-slate-300 accent-[#ff9900]" /> Remember Me</label><Link to="/contact" className="font-bold text-navy transition hover:text-orange">Forgot Password?</Link></div>
+                <div className="flex flex-col justify-between gap-3 text-xs sm:flex-row sm:items-center"><span className="font-semibold text-slate-500">Your session stays active in this browser tab.</span><Link to="/contact" className="font-bold text-navy transition hover:text-orange">Forgot Password?</Link></div>
+                {sessionInitError && <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900" role="alert"><p>Unable to read the saved session. It has not been cleared; you can retry or sign in below.</p><button type="button" onClick={() => void retrySession()} className="mt-2 font-bold underline">Retry saved session</button></div>}
                 {authError && <div className="flex items-start gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800" role="alert">{authError}</div>}
                 <button type="submit" disabled={isSubmitting || isLoading} className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-orange text-sm font-extrabold text-navy shadow-[0_4px_14px_rgba(255,153,0,0.18)] transition hover:-translate-y-0.5 hover:bg-orange-light disabled:cursor-not-allowed disabled:opacity-60">{isSubmitting ? <><LoaderCircle size={16} className="animate-spin" /> Signing In...</> : <>Sign In <ArrowRight size={16} /></>}</button>
                 <Link to="/contact" className="flex items-center justify-center gap-2 text-xs font-bold text-slate-500 transition hover:text-orange">Need Help Accessing Your Account? <ArrowRight size={13} /></Link>

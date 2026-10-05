@@ -1,4 +1,5 @@
 import type { CreatePaymentRequestInput, PaymentRequest, PaymentRequestStatus } from "@shared/payment-requests";
+ ai_main_10604776168c4613afcc
 import { getCurrentSession } from "./supabase";
 import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
@@ -21,19 +22,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+
+import { apiRequest } from "./api-request";
+import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
+
+ main
 export function createPaymentRequest(input: CreatePaymentRequestInput) {
-  return request<PaymentRequest>("/api/payment-requests", {
+  return apiRequest<PaymentRequest>("/api/payment-requests", {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function listPaymentRequests() {
-  return request<PaymentRequest[]>("/api/payment-requests");
+  return apiRequest<PaymentRequest[]>("/api/payment-requests");
 }
 
 export async function updatePaymentRequestStatus(id: string, status: PaymentRequestStatus, rejectionReason?: string) {
-  const result = await request<{ id: string; status: PaymentRequestStatus }>(`/api/admin/payment-requests/${id}/status`, {
+  const result = await apiRequest<{ id: string; status: PaymentRequestStatus }>(`/api/admin/payment-requests/${id}/status`, {
     method: "PATCH",
     body: JSON.stringify({ status, rejectionReason }),
   });
@@ -42,7 +48,7 @@ export async function updatePaymentRequestStatus(id: string, status: PaymentRequ
 }
 
 export async function deletePaymentRequest(id: string) {
-  const result = await request<{ id: string }>(`/api/admin/payment-requests/${id}`, {
+  const result = await apiRequest<{ id: string }>(`/api/admin/payment-requests/${id}`, {
     method: "DELETE",
   });
   notifyAdminReviewCountsChanged();

@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
+import { createClient } from "@supabase/supabase-js";
 import { Link } from "react-router-dom";
 import { openCookiePreferences } from "@/components/CookiePrivacyControls";
 import KycSection from "@/components/dashboard/KycSection";
 import type { Session } from "@supabase/supabase-js";
-import { BadgeCheck, Bell, CalendarDays, CheckCircle2, Mail, Save, ShieldCheck, UserRound } from "lucide-react";
+import { BadgeCheck, Bell, CalendarDays, CheckCircle2, KeyRound, Mail, MonitorCheck, Save, ShieldCheck, UserRound } from "lucide-react";
 import { showInAppNotifications } from "@/lib/account-preferences";
 import { supabase } from "@/lib/supabase";
 
@@ -40,6 +41,15 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [sessionActionError, setSessionActionError] = useState("");
+  const [sessionActionMessage, setSessionActionMessage] = useState("");
+  const [isSigningOutOthers, setIsSigningOutOthers] = useState(false);
   const email = session?.user.email ?? "";
   const memberSince = session?.user.created_at
     ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(new Date(session.user.created_at))
@@ -54,8 +64,7 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
   const completedFields = Number(Boolean(email)) + Number(Boolean(savedName));
   const missingFields = [!email ? "Email address" : "", !savedName ? "Full name" : ""].filter(Boolean);
 
-  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+  const handleSave = async () => {
     if (!session || isSaving) return;
     setIsSaving(true);
     setSaveError("");
@@ -84,6 +93,78 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
     setIsSaving(false);
   };
 
+  const handlePasswordChange = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!session || isChangingPassword) return;
+    setPasswordError("");
+    setPasswordMessage("");
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      setPasswordError("Enter your current password and both new-password fields.");
+      return;
+    }
+    if (newPassword.length < 12) {
+      setPasswordError("Use at least 12 characters for your new password.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordError("The new passwords do not match.");
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setPasswordError("Choose a new password that differs from your current password.");
+      return;
+    }
+    setIsChangingPassword(true);
+    try {
+      const verifier = createClient(import.meta.env.VITE_SUPABASE_URL, import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+        },
+      });
+      const { error: verificationError } = await verifier.auth.signInWithPassword({ email, password: currentPassword });
+      if (verificationError) {
+        setPasswordError("Your current password could not be verified.");
+        return;
+      }
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        setPasswordError(error.code === "reauthentication_needed"
+          ? "For your security, a fresh authentication check is required before changing your password. You remain signed in; sign in again and retry."
+          : error.message || "Unable to update your password. Please try again.");
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setPasswordMessage("Password changed successfully.");
+    } catch {
+      setPasswordError("Unable to update your password. Please try again.");
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
+
+  const handleSignOutOtherSessions = async () => {
+    if (isSigningOutOthers) return;
+    setSessionActionError("");
+    setSessionActionMessage("");
+    setIsSigningOutOthers(true);
+    try {
+      const { error } = await supabase.auth.signOut({ scope: "others" });
+      if (error) {
+        setSessionActionError("Unable to sign out other sessions. Please try again.");
+        return;
+      }
+      setSessionActionMessage("All other active sessions have been signed out. This session remains active.");
+    } catch {
+      setSessionActionError("Unable to sign out other sessions. Please try again.");
+    } finally {
+      setIsSigningOutOthers(false);
+    }
+  };
+
   if (kycOpen) return <div><button type="button" onClick={onCloseKyc} className="mb-5 inline-flex items-center rounded-md border border-slate-200 px-3 py-2 text-xs font-bold text-slate-600 transition hover:border-navy hover:text-navy">Back to profile</button><KycSection userId={userId} deviceApproved={deviceApproved} /></div>;
 
   return (
@@ -105,12 +186,15 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
 
       <nav className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Profile sections">
         <a href="#profile-personal-information" className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Personal Information</span><span className="mt-1 block text-[11px] text-slate-500">Name and contact details</span></a>
+        <a href="#profile-account-status" className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Account Status</span><span className="mt-1 block text-[11px] text-slate-500">Account, device, and payment status</span></a>
+        <a href="#profile-security" className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Password &amp; Security</span><span className="mt-1 block text-[11px] text-slate-500">Change your password</span></a>
+        <a href="#profile-active-sessions" className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Active Sessions</span><span className="mt-1 block text-[11px] text-slate-500">Review current access</span></a>
         <button type="button" onClick={onOpenKyc} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">KYC Verification</span><span className="mt-1 block text-[11px] text-slate-500">Review your identity status</span></button>
         <button type="button" onClick={onOpenEarnings} className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Withdrawal Details</span><span className="mt-1 block text-[11px] text-slate-500">Payment setup and withdrawals</span></button>
         <Link to="/trusted-vendor" className="rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-orange/50"><span className="text-xs font-extrabold text-navy">Security / Device Verification</span><span className="mt-1 block text-[11px] text-slate-500">Current device: {deviceStatus}</span></Link>
       </nav>
 
-      <form className="mt-5 grid gap-5 lg:grid-cols-2" onSubmit={handleSave}>
+      <div className="mt-5 grid gap-5 lg:grid-cols-2">
         <section id="profile-personal-information" className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="account-details-title">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><UserRound size={17} /></span><h2 id="account-details-title" className="text-sm font-extrabold text-navy">Account Details</h2></div>
           <div className="mt-5 space-y-4">
@@ -131,14 +215,34 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
           <div className="mt-4 flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-bold text-navy"><Link className="hover:text-orange" to="/legal/terms">Terms of Service</Link><Link className="hover:text-orange" to="/legal/privacy">Privacy Policy</Link><Link className="hover:text-orange" to="/legal/cookies">Cookie Policy</Link><Link className="hover:text-orange" to="/legal/contributor-agreement">Contributor Agreement</Link></div><button type="button" onClick={openCookiePreferences} className="shrink-0 rounded-lg border border-slate-200 px-3 py-2.5 text-xs font-bold text-navy hover:border-orange">Manage cookie preferences</button></div>
         </section>
 
-        {!isLoading && <section id="profile-security-device" className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6 lg:col-span-2" aria-labelledby="account-status-title">
+        {!isLoading && <section id="profile-account-status" className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6 lg:col-span-2" aria-labelledby="account-status-title">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><BadgeCheck size={17} /></span><h2 id="account-status-title" className="text-sm font-extrabold text-navy">Account Status</h2></div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3"><div className="flex items-center justify-between rounded-lg border border-slate-200 bg-[#fbfcfd] px-4 py-3"><span className="text-xs font-bold text-slate-500">Account</span><span className="text-xs font-extrabold text-navy">{applicationStatus}</span></div><div className="flex items-center justify-between rounded-lg border border-slate-200 bg-[#fbfcfd] px-4 py-3"><span className="text-xs font-bold text-slate-500">Device</span><span className="text-xs font-extrabold text-navy">{deviceStatus}</span></div><div className="flex items-center justify-between rounded-lg border border-slate-200 bg-[#fbfcfd] px-4 py-3"><span className="text-xs font-bold text-slate-500">Payment gateway</span><span className="text-xs font-extrabold text-navy">{paymentConfigured ? "Configured" : "Not configured"}</span></div></div>
         </section>}
 
+        <section id="profile-security" className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="password-security-title">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><KeyRound size={17} /></span><h2 id="password-security-title" className="text-sm font-extrabold text-navy">Password &amp; Security</h2></div>
+          <form className="mt-5 space-y-4" onSubmit={handlePasswordChange}>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-navy">Current password</span><input type="password" autoComplete="current-password" required value={currentPassword} onChange={(event) => { setCurrentPassword(event.target.value); setPasswordError(""); setPasswordMessage(""); }} className="h-11 w-full rounded-lg border border-slate-200 bg-[#fbfcfd] px-3 text-sm text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10" /></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-navy">New password</span><input type="password" autoComplete="new-password" minLength={12} required value={newPassword} onChange={(event) => { setNewPassword(event.target.value); setPasswordError(""); setPasswordMessage(""); }} className="h-11 w-full rounded-lg border border-slate-200 bg-[#fbfcfd] px-3 text-sm text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10" /></label>
+            <label className="block"><span className="mb-1.5 block text-xs font-bold text-navy">Confirm new password</span><input type="password" autoComplete="new-password" minLength={12} required value={confirmPassword} onChange={(event) => { setConfirmPassword(event.target.value); setPasswordError(""); setPasswordMessage(""); }} className="h-11 w-full rounded-lg border border-slate-200 bg-[#fbfcfd] px-3 text-sm text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10" /></label>
+            <p className="text-xs leading-5 text-slate-500">Use at least 12 characters. Your current password is verified before the update.</p>
+            {(passwordError || passwordMessage) && <p className={`rounded-lg border p-3 text-xs ${passwordError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role={passwordError ? "alert" : "status"}>{passwordError || passwordMessage}</p>}
+            <button type="submit" disabled={isChangingPassword || !session} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-navy px-4 text-xs font-extrabold text-white transition hover:bg-navy/90 disabled:cursor-not-allowed disabled:opacity-60">{isChangingPassword ? "Updating…" : "Change Password"}</button>
+          </form>
+        </section>
+
+        <section id="profile-active-sessions" className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="active-sessions-title">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><MonitorCheck size={17} /></span><h2 id="active-sessions-title" className="text-sm font-extrabold text-navy">Active Sessions / Devices</h2></div>
+          <div className="mt-5 rounded-lg border border-emerald-200 bg-emerald-50 p-4"><p className="flex items-center gap-2 text-xs font-extrabold text-emerald-800"><span className="h-2 w-2 rounded-full bg-emerald-500" />Current session is active</p><p className="mt-2 text-xs leading-5 text-emerald-800">You are signed in on this browser.</p></div>
+          <p className="mt-4 text-xs leading-5 text-slate-500">Supabase Auth does not provide this app with a reliable list or count of other signed-in devices, so their browser details and last activity are unavailable.</p>
+          {(sessionActionError || sessionActionMessage) && <p className={`mt-4 rounded-lg border p-3 text-xs ${sessionActionError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role={sessionActionError ? "alert" : "status"}>{sessionActionError || sessionActionMessage}</p>}
+          <button type="button" onClick={() => void handleSignOutOtherSessions()} disabled={isSigningOutOthers || !session} className="mt-4 inline-flex h-10 items-center justify-center rounded-lg border border-slate-300 px-4 text-xs font-extrabold text-navy transition hover:border-orange disabled:cursor-not-allowed disabled:opacity-60">{isSigningOutOthers ? "Signing out other sessions…" : "Sign out of all other devices"}</button>
+        </section>
+
         {(saveError || savedMessage) && <div className={`rounded-lg border p-3 text-sm lg:col-span-2 ${saveError ? "border-red-200 bg-red-50 text-red-800" : "border-emerald-200 bg-emerald-50 text-emerald-800"}`} role={saveError ? "alert" : "status"}>{saveError || savedMessage}</div>}
-        <div className="flex justify-end lg:col-span-2"><button type="submit" disabled={isSaving || !session} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-navy px-5 text-xs font-extrabold text-white transition hover:bg-navy/90 disabled:cursor-not-allowed disabled:opacity-60"><Save size={15} />{isSaving ? "Saving…" : "Save Changes"}</button></div>
-      </form>
+        <div className="flex justify-end lg:col-span-2"><button type="button" onClick={() => void handleSave()} disabled={isSaving || !session} className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-navy px-5 text-xs font-extrabold text-white transition hover:bg-navy/90 disabled:cursor-not-allowed disabled:opacity-60"><Save size={15} />{isSaving ? "Saving…" : "Save Changes"}</button></div>
+      </div>
     </div>
   );
 }
