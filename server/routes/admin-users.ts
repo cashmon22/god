@@ -106,13 +106,17 @@ export const createAdminUser: RequestHandler = async (req, res) => {
   if (applicationError) {
     console.error("[api] Unable to load application referral attribution.", applicationError);
   } else if (application?.referral_owner_user_id && application.referral_owner_user_id !== data.user.id) {
-    const { error: referralError } = await serviceSupabase.from("contributor_referrals").insert({
-      referrer_user_id: application.referral_owner_user_id,
-      referred_user_id: data.user.id,
-      status: application.status === "Approved" ? "Successful" : application.status === "Rejected" ? "Rejected" : "Pending",
+    const referralStatus = application.status === "Approved" ? "Successful" : application.status === "Rejected" ? "Rejected" : "Pending";
+    const { error: referralError } = await serviceSupabase.rpc("qualify_contributor_referral", {
+      target_referred_user_id: data.user.id,
+      target_referrer_user_id: application.referral_owner_user_id,
+      qualification_status: referralStatus,
+      acting_admin_id: admin.id,
     });
-    if (referralError && referralError.code !== "23505") {
+    if (referralError) {
       console.error("[api] Unable to record contributor referral.", referralError);
+      res.status(500).json({ error: "The user was created, but referral qualification could not be recorded." });
+      return;
     }
   }
 
