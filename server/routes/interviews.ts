@@ -22,7 +22,7 @@ type InterviewSession = {
   session_expired_at: string | null;
   submitted_at: string | null;
 };
-const QUESTION_DURATION_MS = 20_000;
+const QUESTION_DURATION_MS = 60_000;
 const sessionColumns = "id, status, answers, interview_mode, current_question_index, question_start_times, session_expired_at, submitted_at";
 
 function sessionPayload(session: InterviewSession, now = Date.now()) {
@@ -36,24 +36,8 @@ function sessionPayload(session: InterviewSession, now = Date.now()) {
   };
 }
 
-async function expireInterview(service: ReturnType<typeof createServiceRoleSupabaseClient>, session: InterviewSession) {
-  const expiredAt = new Date().toISOString();
-  await service.from("interview_submissions").update({ session_expired_at: expiredAt }).eq("id", session.id).is("submitted_at", null).is("session_expired_at", null);
-}
-
 async function loadQuestions(service: ReturnType<typeof createServiceRoleSupabaseClient>) {
   return service.from("interview_questions").select("id, prompt, position, created_at").order("position").order("created_at");
-}
-
-async function expireIfElapsed(req: Request, res: Parameters<RequestHandler>[1], service: ReturnType<typeof createServiceRoleSupabaseClient>, session: InterviewSession) {
-  if (session.submitted_at !== null || session.session_expired_at !== null) return false;
-  const timing = sessionPayload(session);
-  if (timing.deadlineAt > timing.serverNow) return false;
-  await expireInterview(service, session);
-  const token = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : undefined;
-  if (token) await service.auth.admin.signOut(token, "local");
-  res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
-  return true;
 }
 
 function answerForQuestion(answers: InterviewAnswer[], question: InterviewQuestion, answer: string) {
@@ -148,7 +132,6 @@ export const startInterview: RequestHandler = async (req, res) => {
   if (existing) {
     const session = existing as InterviewSession;
     if (session.submitted_at === null && !session.session_expired_at) {
-      if (await expireIfElapsed(req, res, service, session)) return;
       res.json(sessionResponse(session));
       return;
     }
@@ -214,7 +197,6 @@ export const saveInterviewAnswer: RequestHandler = async (req, res) => {
     res.status(409).json({ error: "This interview session is no longer active." });
     return;
   }
-  if (await expireIfElapsed(req, res, service, session)) return;
   const { data: questions, error: questionError } = await loadQuestions(service);
   if (questionError || !questions?.length) {
     res.status(500).json({ error: "Unable to verify the current interview question." });
@@ -222,24 +204,28 @@ export const saveInterviewAnswer: RequestHandler = async (req, res) => {
   }
   const currentIndex = session.current_question_index ?? 0;
   const targetIndex = parsed.data.targetIndex;
-  if (targetIndex < 0 || targetIndex >= questions.length || Math.abs(targetIndex - currentIndex) > 1 || questions[currentIndex]?.id !== parsed.data.questionId) {
+  const currentStartedAt = Date.parse(session.question_start_times[currentIndex] ?? "");
+  if (!Number.isFinite(currentStartedAt)) {
+    res.status(409).json({ error: "The interview question timing could not be verified." });
+    return;
+  }
+  if (targetIndex < 0 || targetIndex >= questions.length || (targetIndex !== currentIndex && targetIndex !== currentIndex + 1) || questions[currentIndex]?.id !== parsed.data.questionId) {
     res.status(409).json({ error: "The interview question changed. Reload to continue." });
     return;
   }
-  if (targetIndex === currentIndex + 1 && !parsed.data.answer.trim()) {
-    res.status(400).json({ error: "Please answer this question before continuing." });
+  if (targetIndex === currentIndex + 1 && Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
+    res.status(409).json({ error: "This question is still in progress." });
     return;
   }
   const answers = answerForQuestion(session.answers ?? [], questions[currentIndex] as InterviewQuestion, parsed.data.answer);
   const timestamps = [...(session.question_start_times ?? [])];
-  if (!timestamps[targetIndex]) timestamps[targetIndex] = new Date().toISOString();
-  const { data, error } = await service.from("interview_submissions").update({ answers, current_question_index: targetIndex, question_start_times: timestamps }).eq("id", session.id).is("submitted_at", null).is("session_expired_at", null).select(sessionColumns).single();
+  if (targetIndex === currentIndex + 1) timestamps[targetIndex] = new Date().toISOString();
+  const { data, error } = await service.from("interview_submissions").update({ answers, current_question_index: targetIndex, question_start_times: timestamps }).eq("id", session.id).eq("current_question_index", currentIndex).is("submitted_at", null).is("session_expired_at", null).select(sessionColumns).single();
   if (error) {
     res.status(500).json({ error: "Unable to save your answer." });
     return;
   }
   const updatedSession = data as InterviewSession;
-  if (await expireIfElapsed(req, res, service, updatedSession)) return;
   res.json(sessionResponse(updatedSession));
 };
 
@@ -265,7 +251,6 @@ export const getMyInterview: RequestHandler = async (req, res) => {
   }
   if (data && data.submitted_at === null && !data.session_expired_at) {
     const session = data as InterviewSession;
-    if (await expireIfElapsed(req, res, service, session)) return;
     res.json({ submission: null, ...sessionResponse(session) });
     return;
   }
@@ -292,13 +277,21 @@ export const submitInterview: RequestHandler = async (req, res) => {
     res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
     return;
   }
-  if (await expireIfElapsed(req, res, service, session)) return;
   const { data: questions, error: questionError } = await loadQuestions(service);
   if (questionError) {
     res.status(500).json({ error: "Unable to load interview questions." });
     return;
   }
   const currentIndex = session.current_question_index ?? 0;
+  const currentStartedAt = Date.parse(session.question_start_times[currentIndex] ?? "");
+  if (!Number.isFinite(currentStartedAt)) {
+    res.status(409).json({ error: "The interview question timing could not be verified." });
+    return;
+  }
+  if (Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
+    res.status(409).json({ error: "Please complete the full time for this question before submitting." });
+    return;
+  }
   if (session.submitted_at !== null || session.session_expired_at || currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {
     res.status(400).json({ error: "Please answer every current interview question." });
     return;

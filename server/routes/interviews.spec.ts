@@ -18,7 +18,7 @@ function response() {
 }
 
 describe("interview session timing", () => {
-  it("expires an overdue session and revokes its active sign-in", async () => {
+  it("keeps an active session signed in after one question reaches its 60-second deadline", async () => {
     const update = { eq: vi.fn(), is: vi.fn() };
     update.eq.mockImplementation(() => update);
     update.is.mockImplementation(() => update);
@@ -29,7 +29,7 @@ describe("interview session timing", () => {
       answers: [{ questionId: "question-1", question: "Prompt", answer: "Draft" }],
       interview_mode: "text",
       current_question_index: 0,
-      question_start_times: [new Date(Date.now() - 21_000).toISOString()],
+      question_start_times: [new Date(Date.now() - 61_000).toISOString()],
       session_expired_at: null,
       submitted_at: null,
     };
@@ -48,8 +48,8 @@ describe("interview session timing", () => {
     const { res, result } = response();
     await getMyInterview({ headers: { authorization: "Bearer test-only-access-token" } } as unknown as Request, res, vi.fn() as never);
 
-    expect(result.statusCode).toBe(410);
-    expect(result.body).toMatchObject({ expired: true });
-    expect(signOut).toHaveBeenCalledWith("test-only-access-token", "local");
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toMatchObject({ session: { index: 0 } });
+    expect(signOut).not.toHaveBeenCalled();
   });
 });
