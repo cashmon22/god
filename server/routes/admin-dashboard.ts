@@ -28,7 +28,7 @@ export const getAdminReviewCounts: RequestHandler = async (req, res) => {
 
   const [applications, interviews, deviceRequests, kyc] = await Promise.all([
     service.from("applications").select("id", { count: "exact", head: true }).eq("status", "Under Review"),
-    service.from("interview_submissions").select("id", { count: "exact", head: true }).eq("status", "Under Review"),
+    service.from("interview_submissions").select("id", { count: "exact", head: true }).eq("status", "Under Review").not("submitted_at", "is", null),
     service.from("payment_requests").select("id", { count: "exact", head: true }).in("status", ["Pending Review", "Under Review"]),
     service.from("contributor_kyc_submissions").select("id", { count: "exact", head: true }).eq("status", "pending"),
   ]);
@@ -78,7 +78,7 @@ export const getAdminDashboardStats: RequestHandler = async (req, res) => {
     service.from("applications").select("id", { count: "exact", head: true }).eq("status", "Under Review"),
     service.from("payment_requests").select("id", { count: "exact", head: true }),
     service.from("payment_requests").select("id", { count: "exact", head: true }).eq("status", "Pending Review"),
-    service.from("interview_submissions").select("id", { count: "exact", head: true }).eq("status", "Under Review"),
+    service.from("interview_submissions").select("id", { count: "exact", head: true }).eq("status", "Under Review").not("submitted_at", "is", null),
     service.from("vendor_conversations").select("id", { count: "exact", head: true }).eq("status", "active"),
     service.from("devices").select("id", { count: "exact", head: true }).eq("status", "Available"),
   ]);

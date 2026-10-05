@@ -3,6 +3,14 @@ import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
 export type InterviewQuestion = { id: string; prompt: string; position: number; created_at: string };
 export type InterviewAnswer = { questionId: string; question: string; answer: string };
+export type InterviewRun = {
+  index: number;
+  answers: InterviewAnswer[];
+  deadlineAt: number;
+  serverNow: number;
+  status: string;
+};
+
 export type InterviewSubmission = {
   id: string;
   user_id: string;
@@ -12,6 +20,7 @@ export type InterviewSubmission = {
   answers: InterviewAnswer[];
   submitted_at: string;
   reviewed_at: string | null;
+  interview_mode: "text" | "video" | null;
 };
 
 export function getInterviewQuestions() {
@@ -19,7 +28,26 @@ export function getInterviewQuestions() {
 }
 
 export function getMyInterview() {
-  return apiRequest<{ submission: Pick<InterviewSubmission, "id" | "status" | "answers" | "submitted_at" | "reviewed_at"> | null }>("/api/interview/me");
+  return apiRequest<{
+    submission: Pick<InterviewSubmission, "id" | "status" | "answers" | "submitted_at" | "reviewed_at"> | null;
+    session?: InterviewRun;
+    expired?: boolean;
+    schemaUpgradeRequired?: boolean;
+  }>("/api/interview/me");
+}
+
+export function startInterview() {
+  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions", {
+    method: "POST",
+    body: JSON.stringify({ mode: "text" }),
+  });
+}
+
+export function saveInterviewAnswer(questionId: string, answer: string, targetIndex: number) {
+  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions/answer", {
+    method: "PATCH",
+    body: JSON.stringify({ questionId, answer, targetIndex }),
+  });
 }
 
 export function submitInterview(answers: Array<{ questionId: string; prompt: string; answer: string }>) {

@@ -58,6 +58,8 @@ import {
   getInterviewAccess,
   getInterviewQuestions,
   getMyInterview,
+  saveInterviewAnswer,
+  startInterview,
   listAdminInterviews,
   reorderInterviewQuestions,
   submitInterview,
@@ -137,6 +139,8 @@ export function createServer() {
   app.get("/api/interview/access", getInterviewAccess);
   app.get("/api/interview/questions", getInterviewQuestions);
   app.get("/api/interview/me", getMyInterview);
+  app.post("/api/interview/sessions", startInterview);
+  app.patch("/api/interview/sessions/answer", saveInterviewAnswer);
   app.post("/api/interview/submissions", submitInterview);
   app.get("/api/admin/interviews", listAdminInterviews);
   app.patch("/api/admin/interviews/:id/status", updateInterviewStatus);
