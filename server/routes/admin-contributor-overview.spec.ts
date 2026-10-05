@@ -39,6 +39,7 @@ function createService() {
     const query: any = {
       select() { return query; },
       eq(column: string, value: unknown) { filters.push([column, value]); return query; },
+      not() { return query; },
       ilike(column: string, value: unknown) { filters.push([column, value]); return query; },
       order() { return query; },
       limit() { return query; },

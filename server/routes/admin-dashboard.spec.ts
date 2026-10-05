@@ -43,6 +43,7 @@ beforeEach(() => {
       const query = {
         select: () => query,
         eq: (filter: string, value: unknown) => { filters.push({ table, filter, value }); return query; },
+        not: (filter: string, operator: string, value: unknown) => { filters.push({ table, filter: `${filter}:${operator}`, value }); return query; },
         in: (filter: string, value: unknown) => { filters.push({ table, filter, value }); return query; },
         then: (resolve: (value: unknown) => unknown, reject?: (reason: unknown) => unknown) =>
           Promise.resolve({ count: tableCounts[table], error: null }).then(resolve, reject),
@@ -69,6 +70,7 @@ describe("admin review counts", () => {
     expect(filters).toEqual(expect.arrayContaining([
       { table: "applications", filter: "status", value: "Under Review" },
       { table: "interview_submissions", filter: "status", value: "Under Review" },
+      { table: "interview_submissions", filter: "submitted_at:is", value: null },
       { table: "payment_requests", filter: "status", value: ["Pending Review", "Under Review"] },
       { table: "contributor_kyc_submissions", filter: "status", value: "pending" },
     ]));

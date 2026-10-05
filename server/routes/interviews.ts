@@ -12,6 +12,58 @@ const submissionColumns = "id, user_id, applicant_name, email, status, answers, 
 
 type InterviewQuestion = { id: string; prompt: string; position: number; created_at: string };
 type InterviewAnswer = { questionId: string; question: string; answer: string };
+type InterviewSession = {
+  id: string;
+  status: string;
+  answers: InterviewAnswer[];
+  interview_mode: "text" | "video" | null;
+  current_question_index: number | null;
+  question_start_times: string[];
+  session_expired_at: string | null;
+  submitted_at: string | null;
+};
+const QUESTION_DURATION_MS = 20_000;
+const sessionColumns = "id, status, answers, interview_mode, current_question_index, question_start_times, session_expired_at, submitted_at";
+
+function sessionPayload(session: InterviewSession, now = Date.now()) {
+  const index = session.current_question_index ?? 0;
+  const startedAt = Date.parse(session.question_start_times[index] ?? new Date(now).toISOString());
+  return {
+    index,
+    answers: session.answers ?? [],
+    deadlineAt: startedAt + QUESTION_DURATION_MS,
+    serverNow: now,
+  };
+}
+
+async function expireInterview(service: ReturnType<typeof createServiceRoleSupabaseClient>, session: InterviewSession) {
+  const expiredAt = new Date().toISOString();
+  await service.from("interview_submissions").update({ session_expired_at: expiredAt }).eq("id", session.id).is("submitted_at", null).is("session_expired_at", null);
+}
+
+async function loadQuestions(service: ReturnType<typeof createServiceRoleSupabaseClient>) {
+  return service.from("interview_questions").select("id, prompt, position, created_at").order("position").order("created_at");
+}
+
+async function expireIfElapsed(req: Request, res: Parameters<RequestHandler>[1], service: ReturnType<typeof createServiceRoleSupabaseClient>, session: InterviewSession) {
+  if (session.submitted_at !== null || session.session_expired_at !== null) return false;
+  const timing = sessionPayload(session);
+  if (timing.deadlineAt > timing.serverNow) return false;
+  await expireInterview(service, session);
+  const token = req.headers.authorization?.startsWith("Bearer ") ? req.headers.authorization.slice(7) : undefined;
+  if (token) await service.auth.admin.signOut(token, "local");
+  res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
+  return true;
+}
+
+function answerForQuestion(answers: InterviewAnswer[], question: InterviewQuestion, answer: string) {
+  return [...answers.filter((existing) => existing.questionId !== question.id), { questionId: question.id, question: question.prompt, answer }];
+}
+
+function sessionResponse(session: InterviewSession) {
+  const now = Date.now();
+  return { session: { ...sessionPayload(session, now), status: session.status }, serverNow: now };
+}
 
 async function getUser(req: Request, res: Parameters<RequestHandler>[1]) {
   const authorization = req.headers.authorization ?? "";
@@ -63,10 +115,21 @@ export const getInterviewAccess: RequestHandler = async (req, res) => {
 };
 
 export const getInterviewQuestions: RequestHandler = async (req, res) => {
-  if (!(await getUser(req, res))) return;
+  const user = await getUser(req, res);
+  if (!user) return;
   const service = serviceClient(res);
   if (!service) return;
-  const { data, error } = await service.from("interview_questions").select(questionColumns).order("position").order("created_at");
+  const { data: session, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
+  if (sessionError) {
+    res.status(500).json({ error: "Unable to load your interview." });
+    return;
+  }
+  if (session && await expireIfElapsed(req, res, service, session as InterviewSession)) return;
+  if (session?.session_expired_at) {
+    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
+    return;
+  }
+  const { data, error } = await loadQuestions(service);
   if (error) {
     console.error("[api] Unable to load interview questions.", error);
     res.status(500).json({ error: "Unable to load interview questions." });
@@ -75,18 +138,139 @@ export const getInterviewQuestions: RequestHandler = async (req, res) => {
   res.json({ questions: data ?? [] });
 };
 
+export const startInterview: RequestHandler = async (req, res) => {
+  const user = await getUser(req, res);
+  if (!user) return;
+  if (req.body?.mode !== "text") {
+    res.status(400).json({ error: "Choose Text-Based Interview to begin the timed interview." });
+    return;
+  }
+  const service = serviceClient(res);
+  if (!service) return;
+  const [{ data: existing, error: existingError }, { data: questions, error: questionError }] = await Promise.all([
+    service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle(),
+    loadQuestions(service),
+  ]);
+  if (existingError || questionError) {
+    res.status(500).json({ error: "Unable to start your interview." });
+    return;
+  }
+  if (existing) {
+    const session = existing as InterviewSession;
+    if (session.submitted_at === null && !session.session_expired_at) {
+      if (await expireIfElapsed(req, res, service, session)) return;
+      res.json(sessionResponse(session));
+      return;
+    }
+    if (session.session_expired_at) {
+      res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
+      return;
+    }
+    res.status(409).json({ error: "Your interview has already been submitted." });
+    return;
+  }
+  if (!questions?.length) {
+    res.status(409).json({ error: "Interview questions are not available yet." });
+    return;
+  }
+  const now = new Date().toISOString();
+  const applicantName = typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
+    ? user.user_metadata.full_name.trim().slice(0, 200)
+    : (user.email ?? "Applicant").slice(0, 200);
+  const { data, error } = await service.from("interview_submissions").insert({
+    user_id: user.id,
+    applicant_name: applicantName,
+    email: user.email ?? "",
+    status: "Under Review",
+    answers: [],
+    interview_mode: "text",
+    current_question_index: 0,
+    question_start_times: [now],
+    submitted_at: null,
+  }).select(sessionColumns).single();
+  if (error) {
+    if (error.code === "23505") {
+      res.status(409).json({ error: "Your interview session is already active. Reload to continue." });
+      return;
+    }
+    console.error("[api] Unable to start interview session.", error);
+    res.status(500).json({ error: "Unable to start your interview." });
+    return;
+  }
+  res.status(201).json(sessionResponse(data as InterviewSession));
+};
+
+export const saveInterviewAnswer: RequestHandler = async (req, res) => {
+  const user = await getUser(req, res);
+  if (!user) return;
+  const parsed = z.object({ questionId: z.string().uuid(), answer: z.string().max(5000), targetIndex: z.number().int().min(0).max(99) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Your answer could not be saved." });
+    return;
+  }
+  const service = serviceClient(res);
+  if (!service) return;
+  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
+  if (sessionError || !sessionData) {
+    res.status(sessionError ? 500 : 409).json({ error: "Start your interview before saving an answer." });
+    return;
+  }
+  const session = sessionData as InterviewSession;
+  if (session.session_expired_at) {
+    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
+    return;
+  }
+  if (session.submitted_at !== null) {
+    res.status(409).json({ error: "This interview session is no longer active." });
+    return;
+  }
+  if (await expireIfElapsed(req, res, service, session)) return;
+  const { data: questions, error: questionError } = await loadQuestions(service);
+  if (questionError || !questions?.length) {
+    res.status(500).json({ error: "Unable to verify the current interview question." });
+    return;
+  }
+  const currentIndex = session.current_question_index ?? 0;
+  const targetIndex = parsed.data.targetIndex;
+  if (targetIndex < 0 || targetIndex >= questions.length || Math.abs(targetIndex - currentIndex) > 1 || questions[currentIndex]?.id !== parsed.data.questionId) {
+    res.status(409).json({ error: "The interview question changed. Reload to continue." });
+    return;
+  }
+  if (targetIndex === currentIndex + 1 && !parsed.data.answer.trim()) {
+    res.status(400).json({ error: "Please answer this question before continuing." });
+    return;
+  }
+  const answers = answerForQuestion(session.answers ?? [], questions[currentIndex] as InterviewQuestion, parsed.data.answer);
+  const timestamps = [...(session.question_start_times ?? [])];
+  if (!timestamps[targetIndex]) timestamps[targetIndex] = new Date().toISOString();
+  const { data, error } = await service.from("interview_submissions").update({ answers, current_question_index: targetIndex, question_start_times: timestamps }).eq("id", session.id).is("submitted_at", null).is("session_expired_at", null).select(sessionColumns).single();
+  if (error) {
+    res.status(500).json({ error: "Unable to save your answer." });
+    return;
+  }
+  const updatedSession = data as InterviewSession;
+  if (await expireIfElapsed(req, res, service, updatedSession)) return;
+  res.json(sessionResponse(updatedSession));
+};
+
 export const getMyInterview: RequestHandler = async (req, res) => {
   const user = await getUser(req, res);
   if (!user) return;
   const service = serviceClient(res);
   if (!service) return;
-  const { data, error } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at").eq("user_id", user.id).maybeSingle();
+  const { data, error } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at, interview_mode, current_question_index, question_start_times, session_expired_at").eq("user_id", user.id).maybeSingle();
   if (error) {
     console.error("[api] Unable to load interview submission.", error);
     res.status(500).json({ error: "Unable to load your interview." });
     return;
   }
-  res.json({ submission: data ?? null });
+  if (data && data.submitted_at === null && !data.session_expired_at) {
+    const session = data as InterviewSession;
+    if (await expireIfElapsed(req, res, service, session)) return;
+    res.json({ submission: null, ...sessionResponse(session) });
+    return;
+  }
+  res.json({ submission: data?.submitted_at ? data : null, expired: Boolean(data?.session_expired_at) });
 };
 
 export const submitInterview: RequestHandler = async (req, res) => {
@@ -99,47 +283,36 @@ export const submitInterview: RequestHandler = async (req, res) => {
   }
   const service = serviceClient(res);
   if (!service) return;
-  const { data: existing, error: existingError } = await service.from("interview_submissions").select("id").eq("user_id", user.id).maybeSingle();
-  if (existingError) {
-    res.status(500).json({ error: "Unable to check your interview status." });
+  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
+  if (sessionError || !sessionData) {
+    res.status(sessionError ? 500 : 409).json({ error: "Start your interview before submitting answers." });
     return;
   }
-  if (existing) {
-    res.status(409).json({ error: "Your interview has already been submitted." });
+  const session = sessionData as InterviewSession;
+  if (session.session_expired_at) {
+    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
     return;
   }
-  const { data: questions, error: questionError } = await service.from("interview_questions").select("id, prompt").order("position").order("created_at");
+  if (await expireIfElapsed(req, res, service, session)) return;
+  const { data: questions, error: questionError } = await loadQuestions(service);
   if (questionError) {
     res.status(500).json({ error: "Unable to load interview questions." });
     return;
   }
-  if (!questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {
+  const currentIndex = session.current_question_index ?? 0;
+  if (session.submitted_at !== null || session.session_expired_at || currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {
     res.status(400).json({ error: "Please answer every current interview question." });
     return;
   }
   const questionById = new Map((questions as Pick<InterviewQuestion, "id" | "prompt">[]).map((question) => [question.id, question.prompt]));
-  const answers: InterviewAnswer[] = parsed.data.answers.map(({ questionId, prompt, answer }) => {
-    const question = questionById.get(questionId);
-    return { questionId, question: prompt, answer };
-  });
-  if (answers.some((answer) => questionById.get(answer.questionId) !== answer.question)) {
-    res.status(400).json({ error: "The interview questions have changed. Please reload and try again." });
+  const answers: InterviewAnswer[] = parsed.data.answers.map(({ questionId, prompt, answer }) => ({ questionId, question: prompt, answer }));
+  if (answers.some((answer) => questionById.get(answer.questionId) !== answer.question) || answers.some(({ questionId, answer }) => !answer.trim() || !questionById.has(questionId))) {
+    res.status(400).json({ error: "The interview questions have changed or an answer is missing." });
     return;
   }
-  const applicantName = typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
-    ? user.user_metadata.full_name.trim().slice(0, 200)
-    : (user.email ?? "Applicant").slice(0, 200);
-  const { data, error } = await service.from("interview_submissions").insert({
-    user_id: user.id,
-    applicant_name: applicantName,
-    email: user.email ?? "",
-    answers,
-  }).select("id, status, submitted_at").single();
+  const submittedAt = new Date().toISOString();
+  const { data, error } = await service.from("interview_submissions").update({ answers, submitted_at: submittedAt }).eq("id", session.id).is("submitted_at", null).is("session_expired_at", null).select("id, status, submitted_at").single();
   if (error) {
-    if (error.code === "23505") {
-      res.status(409).json({ error: "Your interview has already been submitted." });
-      return;
-    }
     console.error("[api] Unable to save interview submission.", error);
     res.status(500).json({ error: "Unable to submit your interview." });
     return;
@@ -151,7 +324,7 @@ export const listAdminInterviews: RequestHandler = async (req, res) => {
   if (!(await getAdminUser(req, res))) return;
   const service = serviceClient(res);
   if (!service) return;
-  const { data, error } = await service.from("interview_submissions").select(submissionColumns).order("submitted_at", { ascending: false });
+  const { data, error } = await service.from("interview_submissions").select(submissionColumns).not("submitted_at", "is", null).order("submitted_at", { ascending: false });
   if (error) {
     res.status(500).json({ error: "Unable to load submitted interviews." });
     return;
@@ -168,7 +341,7 @@ export const updateInterviewStatus: RequestHandler = async (req, res) => {
   }
   const service = serviceClient(res);
   if (!service) return;
-  const { data, error } = await service.from("interview_submissions").update({ status, reviewed_at: new Date().toISOString() }).eq("id", req.params.id).select("id, user_id, applicant_name, status").maybeSingle();
+  const { data, error } = await service.from("interview_submissions").update({ status, reviewed_at: new Date().toISOString() }).eq("id", req.params.id).not("submitted_at", "is", null).select("id, user_id, applicant_name, status").maybeSingle();
   if (error) {
     res.status(500).json({ error: "Unable to update interview status." });
     return;
