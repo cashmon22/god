@@ -56,15 +56,17 @@ export function saveKycDraft(id: string, payload: {
 }
 
 export async function uploadKycFile(id: string, kind: "id" | "selfie", file: Blob, contentType: string) {
+ ai_main_10604776168c4613afcc
   const { data: { session } } = await getCurrentSession();
   if (!session) throw new Error("Your secure session has expired. Please sign in again.");
   const response = await fetch(`/api/kyc/drafts/${id}/files/${kind}`, {
+=======
+  const result = await apiRequest<{ path: string }>(`/api/kyc/drafts/${id}/files/${kind}`, {
+ main
     method: "POST",
-    headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": contentType },
+    headers: { "Content-Type": contentType },
     body: file,
   });
-  const result = await response.json().catch(() => null) as { path?: string; error?: string } | null;
-  if (!response.ok || !result?.path) throw new Error(result?.error ?? "Unable to upload the image.");
   return result.path;
 }
 

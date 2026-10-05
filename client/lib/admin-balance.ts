@@ -3,6 +3,7 @@ import type {
   BalanceTransaction,
   UserBalance,
 } from "@shared/admin-balance";
+ ai_main_10604776168c4613afcc
 import { getCurrentSession } from "./supabase";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -24,24 +25,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+import { apiRequest } from "./api-request";
+ main
+
 export function getUserBalance(userId: string) {
-  return request<UserBalance>(`/api/admin/users/${userId}/balance`);
+  return apiRequest<UserBalance>(`/api/admin/users/${userId}/balance`);
 }
 
 export function addUserBalance(userId: string, input: AdjustBalanceInput) {
-  return request<BalanceTransaction>(`/api/admin/users/${userId}/balance/add`, {
+  return apiRequest<BalanceTransaction>(`/api/admin/users/${userId}/balance/add`, {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function removeUserBalance(userId: string, input: AdjustBalanceInput) {
-  return request<BalanceTransaction>(`/api/admin/users/${userId}/balance/remove`, {
+  return apiRequest<BalanceTransaction>(`/api/admin/users/${userId}/balance/remove`, {
     method: "POST",
     body: JSON.stringify(input),
   });
 }
 
 export function listBalanceTransactions(userId: string) {
-  return request<BalanceTransaction[]>(`/api/admin/users/${userId}/balance/transactions`);
+  return apiRequest<BalanceTransaction[]>(`/api/admin/users/${userId}/balance/transactions`);
 }

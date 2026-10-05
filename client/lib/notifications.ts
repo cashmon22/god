@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppNotification } from "@shared/notifications";
+ ai_main_10604776168c4613afcc
 import { getCurrentSession, supabase } from "./supabase";
 import { listConversations } from "./vendor-messages";
 
@@ -32,18 +33,24 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+=======
+import { apiRequest } from "./api-request";
+import { supabase } from "./supabase";
+import { listConversations } from "./vendor-messages";
+
+ main
 export function listNotifications() {
-  return request<AppNotification[]>("/api/notifications");
+  return apiRequest<AppNotification[]>("/api/notifications");
 }
 
 export function markNotificationRead(id: string) {
-  return request<{ success: boolean }>(`/api/notifications/${id}/read`, {
+  return apiRequest<{ success: boolean }>(`/api/notifications/${id}/read`, {
     method: "PATCH",
   });
 }
 
 export function markAllNotificationsRead() {
-  return request<{ success: boolean }>("/api/notifications/read-all", {
+  return apiRequest<{ success: boolean }>("/api/notifications/read-all", {
     method: "PATCH",
   });
 }
