@@ -25,7 +25,6 @@ import {
   Wallet,
   X,
   ClipboardList,
-  LifeBuoy,
 } from "lucide-react";
 
 import AssignmentsSection from "@/components/dashboard/AssignmentsSection";
@@ -55,13 +54,12 @@ import type { PaymentRequest } from "@shared/payment-requests";
 
 const sidebarItems: Array<{ label: string; icon: LucideIcon }> = [
   { label: "Dashboard", icon: LayoutDashboard },
-  { label: "Assignments", icon: BriefcaseBusiness },
-  { label: "My Tasks", icon: ClipboardList },
-  { label: "Earnings", icon: CircleDollarSign },
-  { label: "Refer & Earn", icon: UsersRound },
-  { label: "Profile", icon: UserRound },
+  { label: "Tasks", icon: ClipboardList },
   { label: "Messages", icon: MessageSquare },
-  { label: "Support", icon: LifeBuoy },
+  { label: "Earnings", icon: CircleDollarSign },
+  { label: "Referrals", icon: UsersRound },
+  { label: "Trusted Vendor", icon: ShieldCheck },
+  { label: "Profile", icon: UserRound },
 ];
 
 const contributorId = "CTR-162-717";
@@ -82,7 +80,7 @@ function DashboardLogo({ dark = false }: { dark?: boolean }) {
   );
 }
 
-function SidebarContent({ activeItem, onSelect, unreadMessages = 0, unreadLoading = false }: { activeItem: string; onSelect: (label: string) => void; unreadMessages?: number; unreadLoading?: boolean }) {
+function SidebarContent({ activeItem, onSelect, onLogout, isSigningOut, unreadMessages = 0, unreadLoading = false }: { activeItem: string; onSelect: (label: string) => void; onLogout: () => void; isSigningOut: boolean; unreadMessages?: number; unreadLoading?: boolean }) {
   return (
     <>
       <div className="border-b border-slate-200 px-5 py-5">
@@ -92,7 +90,8 @@ function SidebarContent({ activeItem, onSelect, unreadMessages = 0, unreadLoadin
         <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-slate-400">Workspace</p>
         <div className="space-y-1">
           {sidebarItems.map(({ label, icon: Icon }) => {
-            const isActive = activeItem === label;
+            const activeLabel = label === "Tasks" ? "My Tasks" : label === "Referrals" ? "Refer & Earn" : label;
+            const isActive = activeItem === activeLabel;
             return (
               <button
                 key={label}
@@ -101,12 +100,11 @@ function SidebarContent({ activeItem, onSelect, unreadMessages = 0, unreadLoadin
                 onClick={() => onSelect(label)}
                 className={`flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-left text-xs font-semibold transition ${isActive ? "bg-orange/10 text-orange" : "text-slate-500 hover:bg-slate-50 hover:text-navy"}`}
               >
-                <Icon size={16} strokeWidth={isActive ? 2.2 : 1.8} />
+                <Icon size={16} className="shrink-0" strokeWidth={isActive ? 2.2 : 1.8} />
                 <span className="min-w-0 flex-1">{label}</span>
-                {label === "Assignments" && <span title={`${availableAssignments} assignments available`} aria-label={`${availableAssignments} assignments available`} role="img" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange text-[10px] font-extrabold text-navy">{availableAssignments}</span>}
                 {label === "Messages" && unreadLoading && <span aria-hidden="true" className="h-5 w-5 shrink-0 animate-pulse rounded-full bg-slate-200" />}
                 {label === "Messages" && !unreadLoading && unreadMessages > 0 && <span title={`${unreadMessages} unread messages`} aria-label={`${unreadMessages} unread messages`} role="img" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-orange text-[10px] font-extrabold text-navy">{unreadMessages}</span>}
-                {isActive && <ChevronRight size={14} />}
+                {isActive && <ChevronRight size={14} className="shrink-0" />}
               </button>
             );
           })}
@@ -120,6 +118,10 @@ function SidebarContent({ activeItem, onSelect, unreadMessages = 0, unreadLoadin
             <p className="mt-1 text-[10px] leading-4 text-slate-500">Your account information is protected.</p>
           </div>
         </div>
+        <button type="button" onClick={onLogout} disabled={isSigningOut} aria-busy={isSigningOut} className="mt-4 flex w-full items-center gap-3 border-t border-slate-200 px-3 pt-4 text-left text-xs font-semibold text-slate-500 transition hover:text-navy disabled:cursor-not-allowed disabled:opacity-60">
+          <LogOut size={16} className="shrink-0" />
+          <span>{isSigningOut ? "Signing out..." : "Logout"}</span>
+        </button>
       </div>
     </>
   );
@@ -253,7 +255,11 @@ export default function Dashboard() {
 
   const selectNavItem = (label: string) => {
     setMobileNavOpen(false);
-    setActiveItem(label);
+    if (label === "Trusted Vendor") {
+      navigate("/trusted-vendor");
+      return;
+    }
+    setActiveItem(label === "Tasks" ? "My Tasks" : label === "Referrals" ? "Refer & Earn" : label);
     if (label !== "Profile") setProfileKycOpen(false);
   };
 
@@ -344,17 +350,13 @@ export default function Dashboard() {
               </div>
             </div>
             <div className="hidden h-7 border-l border-white/15 sm:block" />
-            <button type="button" onClick={handleLogout} disabled={isSigningOut} aria-busy={isSigningOut} className="flex items-center gap-2 rounded-md p-2 text-white/70 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-60" aria-label="Log out">
-              <LogOut size={17} />
-              <span className="hidden text-xs font-semibold sm:inline">{isSigningOut ? "Signing out..." : "Log out"}</span>
-            </button>
           </div>
         </div>
       </header>
 
       <div className="flex min-h-[calc(100vh-72px)]">
         <aside className="sticky top-[72px] hidden h-[calc(100vh-72px)] w-[250px] shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
-          <SidebarContent activeItem={activeItem} onSelect={selectNavItem} unreadMessages={unreadMessages} unreadLoading={unreadLoading} />
+          <SidebarContent activeItem={activeItem} onSelect={selectNavItem} onLogout={() => void handleLogout()} isSigningOut={isSigningOut} unreadMessages={unreadMessages} unreadLoading={unreadLoading} />
         </aside>
 
         {mobileNavOpen && (
@@ -367,7 +369,7 @@ export default function Dashboard() {
             </button>
           </div>
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
-            <SidebarContent activeItem={activeItem} onSelect={selectNavItem} unreadMessages={unreadMessages} unreadLoading={unreadLoading} />
+            <SidebarContent activeItem={activeItem} onSelect={selectNavItem} onLogout={() => void handleLogout()} isSigningOut={isSigningOut} unreadMessages={unreadMessages} unreadLoading={unreadLoading} />
           </div>
         </aside>
 
@@ -504,7 +506,7 @@ export default function Dashboard() {
 
             <div className="mt-8 flex flex-col justify-between gap-3 border-t border-slate-200 pt-5 text-[10px] text-slate-400 sm:flex-row sm:items-center">
               <p>Amazon Contributor Portal · Secure access for approved contributors</p>
-              <div className="flex items-center gap-4"><Link to="/legal/privacy" className="transition hover:text-navy">Privacy</Link><Link to="/legal/terms" className="transition hover:text-navy">Terms</Link><span className="flex items-center gap-1"><Headphones size={12} /> Support</span></div>
+              <div className="flex items-center gap-4"><Link to="/legal/privacy" className="transition hover:text-navy">Privacy</Link><Link to="/legal/terms" className="transition hover:text-navy">Terms</Link><button type="button" onClick={() => selectNavItem("Support")} className="flex items-center gap-1 transition hover:text-navy"><Headphones size={12} /> Support</button></div>
             </div>
           </div>
         </main>
