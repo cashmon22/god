@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AppNotification } from "@shared/notifications";
-import { supabase } from "./supabase";
+import { getCurrentSession, supabase } from "./supabase";
 import { listConversations } from "./vendor-messages";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await getCurrentSession();
   if (!session)
     throw new Error("Your secure session has expired. Please sign in again.");
 

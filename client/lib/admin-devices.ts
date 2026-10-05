@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { getCurrentSession, supabase } from "./supabase";
 
 export type AdminDevice = {
   id: string;
@@ -18,7 +18,7 @@ const deviceFields = "id, name, model, specifications, amount, status, image_url
 type DeviceRecord = Omit<AdminDevice, "imageUrl"> & { image_url: string | null };
 
 async function requireAdminSession() {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getCurrentSession();
   if (!session) throw new Error("Your secure session has expired. Please sign in again.");
   if (session.user.app_metadata?.role !== "admin") throw new Error("Administrator access required.");
 }

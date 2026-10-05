@@ -1,4 +1,4 @@
-import { supabase } from "./supabase";
+import { getCurrentSession } from "./supabase";
 
 const FORMSPREE_ENDPOINT = "https://formspree.io/f/mvkodbjw";
 const submittingFormTypes = new Set<string>();
@@ -16,7 +16,7 @@ export async function submitForm(formType: string, formData: Record<string, unkn
 
     if (formType === "application") {
       // Supabase (via the Express API) is the primary database — insert must succeed.
-      const { data: { session } } = await supabase.auth.getSession();
+      const { data: { session } } = await getCurrentSession();
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (session) headers.Authorization = `Bearer ${session.access_token}`;
       const mirrorResponse = await fetch("/api/applications/mirror", {

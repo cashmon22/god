@@ -1,8 +1,8 @@
-import { supabase } from "./supabase";
+import { getCurrentSession } from "./supabase";
 
 /** Authenticated JSON request to the app's own Express API (/api/*). */
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getCurrentSession();
   if (!session) throw new Error("Your secure session has expired. Please sign in again.");
 
   let response: Response;

@@ -3,10 +3,10 @@ import type {
   BalanceTransaction,
   UserBalance,
 } from "@shared/admin-balance";
-import { supabase } from "./supabase";
+import { getCurrentSession } from "./supabase";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session } } = await getCurrentSession();
   if (!session) throw new Error("Your secure session has expired. Please sign in again.");
 
   const response = await fetch(path, {

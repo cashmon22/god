@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
+import { getCurrentSession, getSessionDuringRateLimit, signOutCurrentSession, supabase } from "./supabase";
+import { clearRefreshRateLimit, isRefreshRateLimited } from "./auth-refresh-fetch";
 
 type AuthContextValue = {
   session: Session | null;
@@ -19,29 +20,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let isMounted = true;
     let subscription: { unsubscribe: () => void } | null = null;
 
-    const clearFailedSession = async () => {
-      try {
-        await supabase.auth.signOut({ scope: "local" });
-      } catch {}
-      if (!isMounted) return;
-      setSession(null);
-      setIsLoading(false);
-    };
-
     try {
-      supabase.auth.getSession().then(({ data: { session }, error }) => {
+      getCurrentSession().then(({ data: { session }, error }) => {
         if (error) {
-          void clearFailedSession();
+          if (isMounted) setIsLoading(false);
           return;
         }
         if (!isMounted) return;
         setSession(session);
         setIsLoading(false);
       }).catch(() => {
-        void clearFailedSession();
+        if (isMounted) setIsLoading(false);
       });
 
-      const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!session && isRefreshRateLimited()) {
+          const storedSession = getSessionDuringRateLimit();
+          if (storedSession) {
+            setSession(storedSession);
+            setIsLoading(false);
+            return;
+          }
+        }
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") clearRefreshRateLimit();
         setSession(session);
         setIsLoading(false);
       });
@@ -64,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await signOutCurrentSession();
     return { error: error ? new Error(error.message) : null };
   };
 
