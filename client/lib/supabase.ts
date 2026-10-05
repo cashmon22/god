@@ -1,4 +1,3 @@
- ai_main_10604776168c4613afcc
 import { createClient, navigatorLock, type Session } from "@supabase/supabase-js";
 import { authRefreshFetch, clearRefreshRateLimit, isRefreshRateLimited } from "./auth-refresh-fetch";
 
@@ -26,20 +25,8 @@ const authStorage = {
 
 export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
   global: { fetch: authRefreshFetch },
-
-import { createClient } from "@supabase/supabase-js";
-import { createAuthRefreshFetch } from "./auth-refresh-fetch";
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-const authStorage = typeof window === "undefined" ? undefined : window.sessionStorage;
-
-export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
-  global: { fetch: createAuthRefreshFetch() },
- main
   auth: {
     persistSession: true,
-    storage: authStorage,
     autoRefreshToken: true,
     detectSessionInUrl: true,
     storage: authStorage,

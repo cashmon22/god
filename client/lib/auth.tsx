@@ -25,51 +25,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
- ai_main_10604776168c4613afcc
-    let isMounted = true;
-    let subscription: { unsubscribe: () => void } | null = null;
-
-    try {
-      getCurrentSession().then(({ data: { session }, error }) => {
-        if (error) {
-          if (isMounted) setIsLoading(false);
-          return;
-        }
-        if (!isMounted) return;
-        setSession(session);
-        setIsLoading(false);
-      }).catch(() => {
-        if (isMounted) setIsLoading(false);
-      });
-
-      const { data } = supabase.auth.onAuthStateChange((event, session) => {
-        if (!session && isRefreshRateLimited()) {
-          const storedSession = getSessionDuringRateLimit();
-          if (storedSession) {
-            setSession(storedSession);
-            setIsLoading(false);
-            return;
-          }
-        }
-        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") clearRefreshRateLimit();
-        setSession(session);
-        setIsLoading(false);
-      });
-      subscription = data.subscription;
-    } catch {
-      // Supabase not configured — load in logged-out state
-      setSession(null);
-
     let receivedResolvedAuthEvent = false;
     let mounted = true;
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      if (!nextSession && isRefreshRateLimited()) {
+        const storedSession = getSessionDuringRateLimit();
+        if (storedSession) {
+          receivedResolvedAuthEvent = true;
+          setSession(storedSession);
+          setAuthError(false);
+          setIsLoading(false);
+          return;
+        }
+      }
       if (event === "INITIAL_SESSION" && !nextSession) return;
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") clearRefreshRateLimit();
       receivedResolvedAuthEvent = true;
       setSession(nextSession);
       setAuthError(false);
       setIsLoading(false);
     });
-    void supabase.auth.getSession().then(({ data: { session: currentSession }, error }) => {
+    void getCurrentSession().then(({ data: { session: currentSession }, error }) => {
       if (!mounted) return;
       if (error) {
         if (!receivedResolvedAuthEvent) {
@@ -80,7 +56,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(currentSession);
         setAuthError(false);
       }
- main
       setIsLoading(false);
     }).catch(() => {
       if (!mounted) return;
@@ -97,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setAuthError(false);
     try {
-      const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+      const { data: { session: currentSession }, error } = await getCurrentSession();
       if (error) throw error;
       setSession(currentSession);
     } catch (error) {
