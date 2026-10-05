@@ -20,6 +20,7 @@ export type InterviewSubmission = {
   answers: InterviewAnswer[];
   submitted_at: string;
   reviewed_at: string | null;
+  interview_mode: "text" | "video" | null;
 };
 
 export function getInterviewQuestions() {
@@ -31,6 +32,7 @@ export function getMyInterview() {
     submission: Pick<InterviewSubmission, "id" | "status" | "answers" | "submitted_at" | "reviewed_at"> | null;
     session?: InterviewRun;
     expired?: boolean;
+    schemaUpgradeRequired?: boolean;
   }>("/api/interview/me");
 }
 

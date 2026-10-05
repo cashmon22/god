@@ -8,7 +8,7 @@ const questionSchema = z.object({ prompt: z.string().trim().min(5).max(1000) });
 const answerSchema = z.object({ questionId: z.string().uuid(), prompt: z.string().min(5).max(1000), answer: z.string().trim().min(1).max(5000) });
 const answersSchema = z.object({ answers: z.array(answerSchema).min(1).max(100) });
 const questionColumns = "id, prompt, position, created_at";
-const submissionColumns = "id, user_id, applicant_name, email, status, answers, submitted_at, reviewed_at";
+const submissionColumns = "id, user_id, applicant_name, email, status, answers, submitted_at, reviewed_at, interview_mode";
 
 type InterviewQuestion = { id: string; prompt: string; position: number; created_at: string };
 type InterviewAnswer = { questionId: string; question: string; answer: string };
@@ -115,20 +115,9 @@ export const getInterviewAccess: RequestHandler = async (req, res) => {
 };
 
 export const getInterviewQuestions: RequestHandler = async (req, res) => {
-  const user = await getUser(req, res);
-  if (!user) return;
+  if (!(await getUser(req, res))) return;
   const service = serviceClient(res);
   if (!service) return;
-  const { data: session, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
-  if (sessionError) {
-    res.status(500).json({ error: "Unable to load your interview." });
-    return;
-  }
-  if (session && await expireIfElapsed(req, res, service, session as InterviewSession)) return;
-  if (session?.session_expired_at) {
-    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
-    return;
-  }
   const { data, error } = await loadQuestions(service);
   if (error) {
     console.error("[api] Unable to load interview questions.", error);
@@ -152,7 +141,8 @@ export const startInterview: RequestHandler = async (req, res) => {
     loadQuestions(service),
   ]);
   if (existingError || questionError) {
-    res.status(500).json({ error: "Unable to start your interview." });
+    const migrationRequired = existingError?.code === "42703";
+    res.status(migrationRequired ? 503 : 500).json({ error: migrationRequired ? "The interview database update must be applied before timed interviews can start." : "Unable to start your interview." });
     return;
   }
   if (existing) {
@@ -259,6 +249,15 @@ export const getMyInterview: RequestHandler = async (req, res) => {
   const service = serviceClient(res);
   if (!service) return;
   const { data, error } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at, interview_mode, current_question_index, question_start_times, session_expired_at").eq("user_id", user.id).maybeSingle();
+  if (error?.code === "42703") {
+    const { data: legacySubmission, error: legacyError } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at").eq("user_id", user.id).maybeSingle();
+    if (legacyError) {
+      res.status(500).json({ error: "Unable to load your interview." });
+      return;
+    }
+    res.json({ submission: legacySubmission?.submitted_at ? legacySubmission : null, schemaUpgradeRequired: true });
+    return;
+  }
   if (error) {
     console.error("[api] Unable to load interview submission.", error);
     res.status(500).json({ error: "Unable to load your interview." });
@@ -325,6 +324,15 @@ export const listAdminInterviews: RequestHandler = async (req, res) => {
   const service = serviceClient(res);
   if (!service) return;
   const { data, error } = await service.from("interview_submissions").select(submissionColumns).not("submitted_at", "is", null).order("submitted_at", { ascending: false });
+  if (error?.code === "42703") {
+    const { data: legacySubmissions, error: legacyError } = await service.from("interview_submissions").select("id, user_id, applicant_name, email, status, answers, submitted_at, reviewed_at").not("submitted_at", "is", null).order("submitted_at", { ascending: false });
+    if (legacyError) {
+      res.status(500).json({ error: "Unable to load submitted interviews." });
+      return;
+    }
+    res.json({ submissions: (legacySubmissions ?? []).map((submission) => ({ ...submission, interview_mode: null })) });
+    return;
+  }
   if (error) {
     res.status(500).json({ error: "Unable to load submitted interviews." });
     return;
