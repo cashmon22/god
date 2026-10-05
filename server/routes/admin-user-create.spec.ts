@@ -15,6 +15,8 @@ const createdUser = {
   created_at: "2026-01-01T00:00:00.000Z",
 };
 let createUser: ReturnType<typeof vi.fn>;
+let referralRpc: ReturnType<typeof vi.fn>;
+let applicationAttribution: { referral_owner_user_id: string; status: string } | null;
 
 function request(body: unknown, authorization = "Bearer admin-token") {
   return { headers: { authorization }, body } as unknown as Request;
@@ -38,14 +40,17 @@ async function invoke(req: Request) {
 beforeEach(() => {
   vi.mocked(supabase.auth.getUser).mockResolvedValue({ data: { user: adminUser } as never, error: null });
   createUser = vi.fn(async () => ({ data: { user: createdUser }, error: null }));
+  referralRpc = vi.fn(async () => ({ data: null, error: null }));
+  applicationAttribution = null;
   const applicationQuery: Record<string, unknown> = {};
   for (const method of ["select", "ilike", "not", "order", "limit"]) {
     applicationQuery[method] = vi.fn(() => applicationQuery);
   }
-  applicationQuery.maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+  applicationQuery.maybeSingle = vi.fn(async () => ({ data: applicationAttribution, error: null }));
   vi.mocked(createServiceRoleSupabaseClient).mockReturnValue({
     auth: { admin: { createUser } },
     from: vi.fn(() => applicationQuery),
+    rpc: referralRpc,
   } as never);
 });
 
@@ -87,6 +92,29 @@ describe("createAdminUser", () => {
       createdAt: "2026-01-01T00:00:00.000Z",
     });
     expect(JSON.stringify(result.body)).not.toContain("a-secure-password");
+  });
+
+  it("qualifies an already-approved referral through the fixed server-side routine", async () => {
+    applicationAttribution = { referral_owner_user_id: "referrer-1", status: "Approved" };
+
+    const result = await invoke(request({ email: "new@example.test", password: "a-secure-password" }));
+
+    expect(result.statusCode).toBe(201);
+    expect(referralRpc).toHaveBeenCalledWith("qualify_contributor_referral", {
+      target_referred_user_id: "new-user-1",
+      target_referrer_user_id: "referrer-1",
+      qualification_status: "Successful",
+      acting_admin_id: "admin-1",
+    });
+  });
+
+  it("does not record a self-referral", async () => {
+    applicationAttribution = { referral_owner_user_id: "new-user-1", status: "Approved" };
+
+    const result = await invoke(request({ email: "new@example.test", password: "a-secure-password" }));
+
+    expect(result.statusCode).toBe(201);
+    expect(referralRpc).not.toHaveBeenCalled();
   });
 
   it("returns a conflict for an existing email without exposing provider details", async () => {

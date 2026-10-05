@@ -1,5 +1,9 @@
+ ai_main_10604776168c4613afcc
+import { getCurrentSession } from "./supabase";
+=======
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "./supabase";
+ main
 
 const SESSION_EXPIRED_MESSAGE = "Your secure session has expired. Please sign in again.";
 const REFRESH_UNAVAILABLE_MESSAGE = "Your session could not be refreshed right now. Please try again.";
@@ -41,6 +45,13 @@ function responseError(status: number, message?: string) {
 
 /** Authenticated JSON request to the app's own Express API (/api/*). */
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+ ai_main_10604776168c4613afcc
+  const { data: { session } } = await getCurrentSession();
+  if (!session) throw new Error("Your secure session has expired. Please sign in again.");
+
+  let response: Response;
+
+ main
   try {
     let session = await currentSession();
     let refreshed = false;

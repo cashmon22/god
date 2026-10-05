@@ -1,5 +1,5 @@
 import { apiRequest } from "./api-request";
-import { supabase } from "./supabase";
+import { getCurrentSession } from "./supabase";
 import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 
 export type KycStatus = "draft" | "pending" | "approved" | "rejected";
@@ -56,7 +56,13 @@ export function saveKycDraft(id: string, payload: {
 }
 
 export async function uploadKycFile(id: string, kind: "id" | "selfie", file: Blob, contentType: string) {
+ ai_main_10604776168c4613afcc
+  const { data: { session } } = await getCurrentSession();
+  if (!session) throw new Error("Your secure session has expired. Please sign in again.");
+  const response = await fetch(`/api/kyc/drafts/${id}/files/${kind}`, {
+=======
   const result = await apiRequest<{ path: string }>(`/api/kyc/drafts/${id}/files/${kind}`, {
+ main
     method: "POST",
     headers: { "Content-Type": contentType },
     body: file,

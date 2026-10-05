@@ -786,7 +786,8 @@ var createUserSchema = z.object({
 	fullName: z.string().trim().max(120).optional()
 });
 var createAdminUser = async (req, res) => {
-	if (!await getAdminUser$3(req, res)) return;
+	const admin = await getAdminUser$3(req, res);
+	if (!admin) return;
 	const parsed = createUserSchema.safeParse(req.body);
 	if (!parsed.success) {
 		res.status(400).json({ error: "Enter a valid email, a password of at least 12 characters, and a valid optional name." });
@@ -817,12 +818,18 @@ var createAdminUser = async (req, res) => {
 	const { data: application, error: applicationError } = await serviceSupabase.from("applications").select("referral_owner_user_id, status").ilike("email", email).not("referral_owner_user_id", "is", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
 	if (applicationError) console.error("[api] Unable to load application referral attribution.", applicationError);
 	else if (application?.referral_owner_user_id && application.referral_owner_user_id !== data.user.id) {
-		const { error: referralError } = await serviceSupabase.from("contributor_referrals").insert({
-			referrer_user_id: application.referral_owner_user_id,
-			referred_user_id: data.user.id,
-			status: application.status === "Approved" ? "Successful" : application.status === "Rejected" ? "Rejected" : "Pending"
+		const referralStatus = application.status === "Approved" ? "Successful" : application.status === "Rejected" ? "Rejected" : "Pending";
+		const { error: referralError } = await serviceSupabase.rpc("qualify_contributor_referral", {
+			target_referred_user_id: data.user.id,
+			target_referrer_user_id: application.referral_owner_user_id,
+			qualification_status: referralStatus,
+			acting_admin_id: admin.id
 		});
-		if (referralError && referralError.code !== "23505") console.error("[api] Unable to record contributor referral.", referralError);
+		if (referralError) {
+			console.error("[api] Unable to record contributor referral.", referralError);
+			res.status(500).json({ error: "The user was created, but referral qualification could not be recorded." });
+			return;
+		}
 	}
 	res.status(201).json({
 		id: data.user.id,
@@ -1325,7 +1332,8 @@ var deleteAdminApplication = async (req, res) => {
 	res.json({ id: data.submission_id });
 };
 var updateAdminApplicationStatus = async (req, res) => {
-	if (!await getAdminUser$2(req, res)) return;
+	const admin = await getAdminUser$2(req, res);
+	if (!admin) return;
 	const serviceSupabase = serviceClient$4(res);
 	if (!serviceSupabase) return;
 	const status = req.body?.status;
@@ -1333,7 +1341,7 @@ var updateAdminApplicationStatus = async (req, res) => {
 		res.status(400).json({ error: "Invalid application status." });
 		return;
 	}
-	const { data: application, error } = await serviceSupabase.from("applications").update({ status }).eq("submission_id", req.params.id).select("id, submission_id, first_name, last_name, email").maybeSingle();
+	const { data: application, error } = await serviceSupabase.from("applications").update({ status }).eq("submission_id", req.params.id).select("id, submission_id, first_name, last_name, email, referral_owner_user_id").maybeSingle();
 	if (error) {
 		console.error("[api] Unable to update application status.", error);
 		res.status(500).json({ error: "Unable to update application status." });
@@ -1359,8 +1367,17 @@ var updateAdminApplicationStatus = async (req, res) => {
 	}
 	if (userId) {
 		const referralStatus = status === "Approved" ? "Successful" : status === "Rejected" ? "Rejected" : "Pending";
-		const { error: referralError } = await serviceSupabase.from("contributor_referrals").update({ status: referralStatus }).eq("referred_user_id", userId);
-		if (referralError) console.error("[api] Unable to update referral status.", referralError);
+		const { error: referralError } = await serviceSupabase.rpc("qualify_contributor_referral", {
+			target_referred_user_id: userId,
+			target_referrer_user_id: application.referral_owner_user_id,
+			qualification_status: referralStatus,
+			acting_admin_id: admin.id
+		});
+		if (referralError) {
+			console.error("[api] Unable to qualify referral.", referralError);
+			res.status(500).json({ error: "Unable to record referral qualification." });
+			return;
+		}
 	}
 	if (userId && (status === "Approved" || status === "Rejected")) {
 		const applicantName = `${application.first_name} ${application.last_name}`.trim() || "Your application";

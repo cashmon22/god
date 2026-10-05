@@ -377,7 +377,8 @@ export const deleteAdminApplication: RequestHandler = async (req, res) => {
 };
 
 export const updateAdminApplicationStatus: RequestHandler = async (req, res) => {
-  if (!(await getAdminUser(req, res))) return;
+  const admin = await getAdminUser(req, res);
+  if (!admin) return;
   const serviceSupabase = serviceClient(res);
   if (!serviceSupabase) return;
   const status = req.body?.status as AdminApplicationStatus;
@@ -389,7 +390,7 @@ export const updateAdminApplicationStatus: RequestHandler = async (req, res) => 
     .from("applications")
     .update({ status })
     .eq("submission_id", req.params.id)
-    .select("id, submission_id, first_name, last_name, email")
+    .select("id, submission_id, first_name, last_name, email, referral_owner_user_id")
     .maybeSingle();
   if (error) {
     console.error("[api] Unable to update application status.", error);
@@ -416,10 +417,17 @@ export const updateAdminApplicationStatus: RequestHandler = async (req, res) => 
 
   if (userId) {
     const referralStatus = status === "Approved" ? "Successful" : status === "Rejected" ? "Rejected" : "Pending";
-    const { error: referralError } = await serviceSupabase.from("contributor_referrals")
-      .update({ status: referralStatus })
-      .eq("referred_user_id", userId);
-    if (referralError) console.error("[api] Unable to update referral status.", referralError);
+    const { error: referralError } = await serviceSupabase.rpc("qualify_contributor_referral", {
+      target_referred_user_id: userId,
+      target_referrer_user_id: application.referral_owner_user_id,
+      qualification_status: referralStatus,
+      acting_admin_id: admin.id,
+    });
+    if (referralError) {
+      console.error("[api] Unable to qualify referral.", referralError);
+      res.status(500).json({ error: "Unable to record referral qualification." });
+      return;
+    }
   }
 
   if (userId && (status === "Approved" || status === "Rejected")) {

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { supabase } from "./supabase";
+import { getCurrentSession, getSessionDuringRateLimit, signOutCurrentSession, supabase } from "./supabase";
+import { clearRefreshRateLimit, isRefreshRateLimited } from "./auth-refresh-fetch";
 
 type AuthContextValue = {
   session: Session | null;
@@ -24,6 +25,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [authError, setAuthError] = useState(false);
 
   useEffect(() => {
+ ai_main_10604776168c4613afcc
+    let isMounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    try {
+      getCurrentSession().then(({ data: { session }, error }) => {
+        if (error) {
+          if (isMounted) setIsLoading(false);
+          return;
+        }
+        if (!isMounted) return;
+        setSession(session);
+        setIsLoading(false);
+      }).catch(() => {
+        if (isMounted) setIsLoading(false);
+      });
+
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (!session && isRefreshRateLimited()) {
+          const storedSession = getSessionDuringRateLimit();
+          if (storedSession) {
+            setSession(storedSession);
+            setIsLoading(false);
+            return;
+          }
+        }
+        if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") clearRefreshRateLimit();
+        setSession(session);
+        setIsLoading(false);
+      });
+      subscription = data.subscription;
+    } catch {
+      // Supabase not configured — load in logged-out state
+      setSession(null);
+
     let receivedResolvedAuthEvent = false;
     let mounted = true;
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
@@ -44,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(currentSession);
         setAuthError(false);
       }
+ main
       setIsLoading(false);
     }).catch(() => {
       if (!mounted) return;
@@ -81,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await signOutCurrentSession();
     return { error: error ? new Error(error.message) : null };
   };
 
