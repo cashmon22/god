@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 vi.mock("./admin-dashboard", () => ({ notifyAdminReviewCountsChanged: vi.fn() }));
 
 vi.mock("./supabase", () => ({
+  getCurrentSession: () => supabase.auth.getSession(),
   supabase: {
     auth: {
       getSession: vi.fn(),
