@@ -3,6 +3,55 @@ const RATE_LIMIT_STORAGE_KEY = "app.supabase.auth.refresh-rate-limit-until";
 
 let rateLimitedResponse: Response | null = null;
 let rateLimitedUntil = readRateLimitUntil();
+let activeRefreshRequests = 0;
+let activeApplicationRefreshes = 0;
+let applicationRefreshAttempts = 0;
+let browserAuthClients = 0;
+
+function authDiagnostic(event: string, details: Record<string, string | number | boolean>) {
+  console.info(`[auth] ${event}`, details);
+}
+
+export function trackSupabaseClient(kind: "primary" | "isolated") {
+  browserAuthClients += 1;
+  authDiagnostic("client-created", { kind, browserAuthClients });
+  return () => {
+    browserAuthClients = Math.max(0, browserAuthClients - 1);
+    authDiagnostic("client-disposed", { kind, browserAuthClients });
+  };
+}
+
+function safeDiagnosticSource(source: string) {
+  return source.split("?")[0].replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id").slice(0, 120);
+}
+
+export function recordSessionRead(source: string) {
+  authDiagnostic("session-read", { source: safeDiagnosticSource(source), refreshInProgress: activeRefreshRequests > 0, cooldownActive: isRefreshRateLimited() });
+}
+
+export function recordApplicationRefreshRequest(source: string) {
+  applicationRefreshAttempts += 1;
+  activeApplicationRefreshes += 1;
+  authDiagnostic("application-refresh-requested", {
+    source: safeDiagnosticSource(source),
+    applicationRefreshAttempts,
+    refreshInProgress: activeApplicationRefreshes > 1 || activeRefreshRequests > 0,
+    cooldownActive: isRefreshRateLimited(),
+    browserAuthClients,
+  });
+  let active = true;
+  return () => {
+    if (!active) return;
+    active = false;
+    activeApplicationRefreshes = Math.max(0, activeApplicationRefreshes - 1);
+  };
+}
+
+function safeRefreshSource(input: RequestInfo | URL) {
+  const url = input instanceof Request ? input.url : input.toString();
+  const pathname = new URL(url, window.location.origin).pathname;
+  return pathname.replace(/[0-9a-f]{8}-[0-9a-f-]{27,}/gi, ":id");
+}
 
 function readRateLimitUntil() {
   if (typeof window === "undefined") return 0;
@@ -33,7 +82,7 @@ function retryDelayMs(value: string | null) {
     : DEFAULT_RATE_LIMIT_DELAY_MS;
 }
 
-function rateLimitResponse() {
+function rateLimitResponse(): Response {
   const retryAfter = Math.max(1, Math.ceil((rateLimitedUntil - Date.now()) / 1000));
   return new Response(JSON.stringify({
     code: "over_request_rate_limit",
@@ -60,19 +109,29 @@ export function clearRefreshRateLimit() {
 
 export const authRefreshFetch: typeof fetch = async (input, init) => {
   if (!isRefreshRequest(input, init)) return fetch(input, init);
-  if (isRefreshRateLimited()) return rateLimitedResponse?.clone() ?? rateLimitResponse();
-
-  const response = await fetch(input, init);
-  if (response.status === 429) {
-    rateLimitedResponse = response.clone();
-    rateLimitedUntil = Date.now() + retryDelayMs(response.headers.get("Retry-After"));
-    try {
-      window.sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, String(rateLimitedUntil));
-    } catch {
-      // Session storage is optional outside standard browser contexts.
-    }
-  } else if (rateLimitedResponse) {
-    clearRefreshRateLimit();
+  if (isRefreshRateLimited()) {
+    authDiagnostic("refresh-suppressed", { source: safeRefreshSource(input), refreshInProgress: activeRefreshRequests > 0, cooldownActive: true, browserAuthClients });
+    return rateLimitedResponse?.clone() ?? rateLimitResponse();
   }
-  return response;
+
+  activeRefreshRequests += 1;
+  authDiagnostic("refresh-network-requested", { source: safeRefreshSource(input), refreshInProgress: activeRefreshRequests > 1, cooldownActive: false, browserAuthClients });
+  try {
+    const response = await fetch(input, init);
+    if (response.status === 429) {
+      rateLimitedResponse = response.clone();
+      rateLimitedUntil = Date.now() + retryDelayMs(response.headers.get("Retry-After"));
+      try {
+        window.sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, String(rateLimitedUntil));
+      } catch {
+        // Session storage is optional outside standard browser contexts.
+      }
+      authDiagnostic("refresh-rate-limited", { source: safeRefreshSource(input), cooldownActive: true, retryAfterSeconds: Math.max(1, Math.ceil((rateLimitedUntil - Date.now()) / 1000)), browserAuthClients });
+    } else if (rateLimitedResponse) {
+      clearRefreshRateLimit();
+    }
+    return response;
+  } finally {
+    activeRefreshRequests = Math.max(0, activeRefreshRequests - 1);
+  }
 };

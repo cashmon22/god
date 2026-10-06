@@ -27,11 +27,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let receivedResolvedAuthEvent = false;
+    let preservedRateLimitedSession = false;
     let mounted = true;
     const { data } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      console.info("[auth] state-change", { event, hasSession: Boolean(nextSession), cooldownActive: isRefreshRateLimited() });
       if (!nextSession && isRefreshRateLimited()) {
+        if (preservedRateLimitedSession) return;
         const storedSession = getSessionDuringRateLimit();
         if (storedSession) {
+          preservedRateLimitedSession = true;
           receivedResolvedAuthEvent = true;
           setSession(storedSession);
           setAuthError(false);
@@ -40,13 +44,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
       if (event === "INITIAL_SESSION" && !nextSession) return;
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") clearRefreshRateLimit();
+      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+        preservedRateLimitedSession = false;
+        clearRefreshRateLimit();
+      }
       receivedResolvedAuthEvent = true;
       setSession(nextSession);
       setAuthError(false);
       setIsLoading(false);
     });
-    void getCurrentSession().then(({ data: { session: currentSession }, error }) => {
+    void getCurrentSession("auth-provider:init").then(({ data: { session: currentSession }, error }) => {
       if (!mounted) return;
       if (error) {
         if (!receivedResolvedAuthEvent) {
@@ -73,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setAuthError(false);
     try {
-      const { data: { session: currentSession }, error } = await getCurrentSession();
+      const { data: { session: currentSession }, error } = await getCurrentSession("auth-provider:retry");
       if (error) throw error;
       setSession(currentSession);
     } catch (error) {
