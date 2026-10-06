@@ -2839,7 +2839,10 @@ var startInterview = async (req, res) => {
 		res.status(500).json({ error: "Unable to start your interview." });
 		return;
 	}
-	res.status(201).json(sessionResponse(data));
+	res.status(201).json({
+		...sessionResponse(data),
+		questions
+	});
 };
 var startInterviewQuestion = async (req, res) => {
 	const user = await getUser(req, res);
@@ -2905,10 +2908,6 @@ var saveInterviewAnswer = async (req, res) => {
 	}
 	if (targetIndex < 0 || targetIndex >= questions.length || targetIndex !== currentIndex && targetIndex !== currentIndex + 1 || questions[currentIndex]?.id !== parsed.data.questionId) {
 		res.status(409).json({ error: "The interview question changed. Reload to continue." });
-		return;
-	}
-	if (targetIndex === currentIndex + 1 && Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
-		res.status(409).json({ error: "This question is still in progress." });
 		return;
 	}
 	const answers = answerForQuestion(session.answers ?? [], questions[currentIndex], parsed.data.answer);
@@ -2982,10 +2981,6 @@ var submitInterview = async (req, res) => {
 	const currentStartedAt = Date.parse(session.question_start_times[currentIndex] ?? "");
 	if (!Number.isFinite(currentStartedAt)) {
 		res.status(409).json({ error: "The interview question timing could not be verified." });
-		return;
-	}
-	if (Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
-		res.status(409).json({ error: "Please complete the full time for this question before submitting." });
 		return;
 	}
 	if (currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {

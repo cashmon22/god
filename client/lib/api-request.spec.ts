@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+// @vitest-environment jsdom
 import { apiRequest } from "./api-request";
 import { deleteAdminApplication, updateAdminApplicationStatus } from "./admin-applications";
 import { supabase } from "./supabase";
