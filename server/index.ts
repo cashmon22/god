@@ -60,6 +60,7 @@ import {
   getMyInterview,
   saveInterviewAnswer,
   startInterview,
+  startInterviewQuestion,
   listAdminInterviews,
   reorderInterviewQuestions,
   submitInterview,
@@ -140,6 +141,7 @@ export function createServer() {
   app.get("/api/interview/questions", getInterviewQuestions);
   app.get("/api/interview/me", getMyInterview);
   app.post("/api/interview/sessions", startInterview);
+  app.post("/api/interview/sessions/question", startInterviewQuestion);
   app.patch("/api/interview/sessions/answer", saveInterviewAnswer);
   app.post("/api/interview/submissions", submitInterview);
   app.get("/api/admin/interviews", listAdminInterviews);

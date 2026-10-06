@@ -5,8 +5,7 @@ import { getInterviewStatus } from "../lib/interview-access";
 import { createServiceRoleSupabaseClient, supabase } from "../lib/supabase";
 
 const questionSchema = z.object({ prompt: z.string().trim().min(5).max(1000) });
-const answerSchema = z.object({ questionId: z.string().uuid(), prompt: z.string().min(5).max(1000), answer: z.string().trim().min(1).max(5000) });
-const answersSchema = z.object({ answers: z.array(answerSchema).min(1).max(100) });
+const answerSchema = z.object({ questionId: z.string().uuid(), prompt: z.string().min(5).max(1000), answer: z.string().trim().max(5000) });
 const questionColumns = "id, prompt, position, created_at";
 const submissionColumns = "id, user_id, applicant_name, email, status, answers, submitted_at, reviewed_at, interview_mode";
 
@@ -14,6 +13,7 @@ type InterviewQuestion = { id: string; prompt: string; position: number; created
 type InterviewAnswer = { questionId: string; question: string; answer: string };
 type InterviewSession = {
   id: string;
+  user_id: string;
   status: string;
   answers: InterviewAnswer[];
   interview_mode: "text" | "video" | null;
@@ -23,15 +23,16 @@ type InterviewSession = {
   submitted_at: string | null;
 };
 const QUESTION_DURATION_MS = 60_000;
-const sessionColumns = "id, status, answers, interview_mode, current_question_index, question_start_times, session_expired_at, submitted_at";
+const sessionColumns = "id, user_id, status, answers, interview_mode, current_question_index, question_start_times, session_expired_at, submitted_at";
 
 function sessionPayload(session: InterviewSession, now = Date.now()) {
   const index = session.current_question_index ?? 0;
-  const startedAt = Date.parse(session.question_start_times[index] ?? new Date(now).toISOString());
+  const startedAt = Date.parse(session.question_start_times[index] ?? "");
   return {
+    id: session.id,
     index,
     answers: session.answers ?? [],
-    deadlineAt: startedAt + QUESTION_DURATION_MS,
+    deadlineAt: Number.isFinite(startedAt) ? startedAt + QUESTION_DURATION_MS : null,
     serverNow: now,
   };
 }
@@ -120,25 +121,17 @@ export const startInterview: RequestHandler = async (req, res) => {
   }
   const service = serviceClient(res);
   if (!service) return;
-  const [{ data: existing, error: existingError }, { data: questions, error: questionError }] = await Promise.all([
-    service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle(),
+  const [{ data: activeAttempt, error: activeError }, { data: submission, error: submissionError }, { data: questions, error: questionError }] = await Promise.all([
+    service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).is("submitted_at", null).is("session_expired_at", null).maybeSingle(),
+    service.from("interview_submissions").select("id, status").eq("user_id", user.id).not("submitted_at", "is", null).order("submitted_at", { ascending: false }).limit(1).maybeSingle(),
     loadQuestions(service),
   ]);
-  if (existingError || questionError) {
-    const migrationRequired = existingError?.code === "42703";
+  if (activeError || submissionError || questionError) {
+    const migrationRequired = [activeError, submissionError, questionError].some((error) => error?.code === "42703");
     res.status(migrationRequired ? 503 : 500).json({ error: migrationRequired ? "The interview database update must be applied before timed interviews can start." : "Unable to start your interview." });
     return;
   }
-  if (existing) {
-    const session = existing as InterviewSession;
-    if (session.submitted_at === null && !session.session_expired_at) {
-      res.json(sessionResponse(session));
-      return;
-    }
-    if (session.session_expired_at) {
-      res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
-      return;
-    }
+  if (submission) {
     res.status(409).json({ error: "Your interview has already been submitted." });
     return;
   }
@@ -146,7 +139,13 @@ export const startInterview: RequestHandler = async (req, res) => {
     res.status(409).json({ error: "Interview questions are not available yet." });
     return;
   }
-  const now = new Date().toISOString();
+  if (activeAttempt) {
+    const { error } = await service.from("interview_submissions").update({ session_expired_at: new Date().toISOString() }).eq("id", activeAttempt.id).is("submitted_at", null).is("session_expired_at", null);
+    if (error) {
+      res.status(500).json({ error: "Unable to archive the previous interview attempt." });
+      return;
+    }
+  }
   const applicantName = typeof user.user_metadata?.full_name === "string" && user.user_metadata.full_name.trim()
     ? user.user_metadata.full_name.trim().slice(0, 200)
     : (user.email ?? "Applicant").slice(0, 200);
@@ -158,12 +157,12 @@ export const startInterview: RequestHandler = async (req, res) => {
     answers: [],
     interview_mode: "text",
     current_question_index: 0,
-    question_start_times: [now],
+    question_start_times: [],
     submitted_at: null,
   }).select(sessionColumns).single();
   if (error) {
     if (error.code === "23505") {
-      res.status(409).json({ error: "Your interview session is already active. Reload to continue." });
+      res.status(409).json({ error: "A new interview attempt has already started. Reload to continue." });
       return;
     }
     console.error("[api] Unable to start interview session.", error);
@@ -173,27 +172,46 @@ export const startInterview: RequestHandler = async (req, res) => {
   res.status(201).json(sessionResponse(data as InterviewSession));
 };
 
+export const startInterviewQuestion: RequestHandler = async (req, res) => {
+  const user = await getUser(req, res);
+  if (!user) return;
+  const parsed = z.object({ sessionId: z.string().uuid(), questionIndex: z.number().int().min(0).max(99) }).safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "The interview question could not be started." });
+    return;
+  }
+  const service = serviceClient(res);
+  if (!service) return;
+  const { data, error } = await service.rpc("start_interview_question", {
+    p_session_id: parsed.data.sessionId,
+    p_user_id: user.id,
+    p_question_index: parsed.data.questionIndex,
+  });
+  const session = Array.isArray(data) ? data[0] as InterviewSession | undefined : data as InterviewSession | null;
+  if (error || !session || session.user_id !== user.id) {
+    res.status(error ? 500 : 409).json({ error: "This interview question is no longer active." });
+    return;
+  }
+  res.json(sessionResponse(session));
+};
+
 export const saveInterviewAnswer: RequestHandler = async (req, res) => {
   const user = await getUser(req, res);
   if (!user) return;
-  const parsed = z.object({ questionId: z.string().uuid(), answer: z.string().max(5000), targetIndex: z.number().int().min(0).max(99) }).safeParse(req.body);
+  const parsed = z.object({ sessionId: z.string().uuid(), questionId: z.string().uuid(), answer: z.string().max(5000), targetIndex: z.number().int().min(0).max(99) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Your answer could not be saved." });
     return;
   }
   const service = serviceClient(res);
   if (!service) return;
-  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
+  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("id", parsed.data.sessionId).eq("user_id", user.id).maybeSingle();
   if (sessionError || !sessionData) {
     res.status(sessionError ? 500 : 409).json({ error: "Start your interview before saving an answer." });
     return;
   }
   const session = sessionData as InterviewSession;
-  if (session.session_expired_at) {
-    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
-    return;
-  }
-  if (session.submitted_at !== null) {
+  if (session.session_expired_at || session.submitted_at !== null) {
     res.status(409).json({ error: "This interview session is no longer active." });
     return;
   }
@@ -206,7 +224,7 @@ export const saveInterviewAnswer: RequestHandler = async (req, res) => {
   const targetIndex = parsed.data.targetIndex;
   const currentStartedAt = Date.parse(session.question_start_times[currentIndex] ?? "");
   if (!Number.isFinite(currentStartedAt)) {
-    res.status(409).json({ error: "The interview question timing could not be verified." });
+    res.status(409).json({ error: "The question timer has not started yet." });
     return;
   }
   if (targetIndex < 0 || targetIndex >= questions.length || (targetIndex !== currentIndex && targetIndex !== currentIndex + 1) || questions[currentIndex]?.id !== parsed.data.questionId) {
@@ -219,7 +237,6 @@ export const saveInterviewAnswer: RequestHandler = async (req, res) => {
   }
   const answers = answerForQuestion(session.answers ?? [], questions[currentIndex] as InterviewQuestion, parsed.data.answer);
   const timestamps = [...(session.question_start_times ?? [])];
-  if (targetIndex === currentIndex + 1) timestamps[targetIndex] = new Date().toISOString();
   const { data, error } = await service.from("interview_submissions").update({ answers, current_question_index: targetIndex, question_start_times: timestamps }).eq("id", session.id).eq("current_question_index", currentIndex).is("submitted_at", null).is("session_expired_at", null).select(sessionColumns).single();
   if (error) {
     res.status(500).json({ error: "Unable to save your answer." });
@@ -234,9 +251,9 @@ export const getMyInterview: RequestHandler = async (req, res) => {
   if (!user) return;
   const service = serviceClient(res);
   if (!service) return;
-  const { data, error } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at, interview_mode, current_question_index, question_start_times, session_expired_at").eq("user_id", user.id).maybeSingle();
+  const { data, error } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at, interview_mode").eq("user_id", user.id).not("submitted_at", "is", null).order("submitted_at", { ascending: false }).limit(1).maybeSingle();
   if (error?.code === "42703") {
-    const { data: legacySubmission, error: legacyError } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at").eq("user_id", user.id).maybeSingle();
+    const { data: legacySubmission, error: legacyError } = await service.from("interview_submissions").select("id, status, answers, submitted_at, reviewed_at").eq("user_id", user.id).not("submitted_at", "is", null).order("submitted_at", { ascending: false }).limit(1).maybeSingle();
     if (legacyError) {
       res.status(500).json({ error: "Unable to load your interview." });
       return;
@@ -249,32 +266,27 @@ export const getMyInterview: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Unable to load your interview." });
     return;
   }
-  if (data && data.submitted_at === null && !data.session_expired_at) {
-    const session = data as InterviewSession;
-    res.json({ submission: null, ...sessionResponse(session) });
-    return;
-  }
-  res.json({ submission: data?.submitted_at ? data : null, expired: Boolean(data?.session_expired_at) });
+  res.json({ submission: data ?? null });
 };
 
 export const submitInterview: RequestHandler = async (req, res) => {
   const user = await getUser(req, res);
   if (!user) return;
-  const parsed = answersSchema.safeParse(req.body);
+  const parsed = z.object({ sessionId: z.string().uuid(), answers: z.array(answerSchema).min(1).max(100) }).safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Please answer every interview question." });
     return;
   }
   const service = serviceClient(res);
   if (!service) return;
-  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("user_id", user.id).maybeSingle();
+  const { data: sessionData, error: sessionError } = await service.from("interview_submissions").select(sessionColumns).eq("id", parsed.data.sessionId).eq("user_id", user.id).maybeSingle();
   if (sessionError || !sessionData) {
     res.status(sessionError ? 500 : 409).json({ error: "Start your interview before submitting answers." });
     return;
   }
   const session = sessionData as InterviewSession;
-  if (session.session_expired_at) {
-    res.status(410).json({ error: "Your interview time has expired. You have been signed out for security reasons.", expired: true });
+  if (session.session_expired_at || session.submitted_at !== null) {
+    res.status(409).json({ error: "This interview session is no longer active." });
     return;
   }
   const { data: questions, error: questionError } = await loadQuestions(service);
@@ -292,13 +304,13 @@ export const submitInterview: RequestHandler = async (req, res) => {
     res.status(409).json({ error: "Please complete the full time for this question before submitting." });
     return;
   }
-  if (session.submitted_at !== null || session.session_expired_at || currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {
+  if (currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {
     res.status(400).json({ error: "Please answer every current interview question." });
     return;
   }
   const questionById = new Map((questions as Pick<InterviewQuestion, "id" | "prompt">[]).map((question) => [question.id, question.prompt]));
   const answers: InterviewAnswer[] = parsed.data.answers.map(({ questionId, prompt, answer }) => ({ questionId, question: prompt, answer }));
-  if (answers.some((answer) => questionById.get(answer.questionId) !== answer.question) || answers.some(({ questionId, answer }) => !answer.trim() || !questionById.has(questionId))) {
+  if (answers.some((answer) => questionById.get(answer.questionId) !== answer.question) || answers.some(({ questionId }) => !questionById.has(questionId))) {
     res.status(400).json({ error: "The interview questions have changed or an answer is missing." });
     return;
   }

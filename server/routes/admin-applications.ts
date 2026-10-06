@@ -283,6 +283,8 @@ export const getMyApplication: RequestHandler = async (req, res) => {
     .select("id, status, submitted_at")
     .eq("user_id", auth.user.id)
     .not("submitted_at", "is", null)
+    .order("submitted_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
   if (interviewError) {
     res.status(500).json({ error: "Unable to load your interview status." });
