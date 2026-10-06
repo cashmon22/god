@@ -231,10 +231,6 @@ export const saveInterviewAnswer: RequestHandler = async (req, res) => {
     res.status(409).json({ error: "The interview question changed. Reload to continue." });
     return;
   }
-  if (targetIndex === currentIndex + 1 && Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
-    res.status(409).json({ error: "This question is still in progress." });
-    return;
-  }
   const answers = answerForQuestion(session.answers ?? [], questions[currentIndex] as InterviewQuestion, parsed.data.answer);
   const timestamps = [...(session.question_start_times ?? [])];
   const { data, error } = await service.from("interview_submissions").update({ answers, current_question_index: targetIndex, question_start_times: timestamps }).eq("id", session.id).eq("current_question_index", currentIndex).is("submitted_at", null).is("session_expired_at", null).select(sessionColumns).single();
@@ -298,10 +294,6 @@ export const submitInterview: RequestHandler = async (req, res) => {
   const currentStartedAt = Date.parse(session.question_start_times[currentIndex] ?? "");
   if (!Number.isFinite(currentStartedAt)) {
     res.status(409).json({ error: "The interview question timing could not be verified." });
-    return;
-  }
-  if (Date.now() < currentStartedAt + QUESTION_DURATION_MS) {
-    res.status(409).json({ error: "Please complete the full time for this question before submitting." });
     return;
   }
   if (currentIndex !== (questions?.length ?? 0) - 1 || !questions?.length || parsed.data.answers.length !== questions.length || new Set(parsed.data.answers.map((answer) => answer.questionId)).size !== questions.length) {

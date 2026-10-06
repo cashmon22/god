@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createServiceRoleSupabaseClient, supabase } from "../lib/supabase";
-import { getMyInterview, startInterview, startInterviewQuestion } from "./interviews";
+import { getMyInterview, saveInterviewAnswer, startInterview, startInterviewQuestion, submitInterview } from "./interviews";
 
 vi.mock("../lib/supabase", () => ({
   supabase: { auth: { getUser: vi.fn() } },
@@ -112,6 +112,69 @@ describe("interview attempts", () => {
     expect(result.body).toEqual({ error: "Your interview has already been submitted." });
     expect(service.from).toHaveBeenCalledTimes(3);
     expect(submissionQueries).toHaveLength(0);
+  });
+
+  it("saves and advances the active question before its timer expires", async () => {
+    const questions = Array.from({ length: 10 }, (_, position) => ({
+      id: `00000000-0000-4000-8000-${String(position + 1).padStart(12, "0")}`,
+      prompt: `Question ${position + 1} prompt?`,
+      position,
+      created_at: new Date().toISOString(),
+    }));
+    const attempt = {
+      id: "11111111-1111-4111-8111-111111111111",
+      user_id: user.id,
+      status: "Under Review",
+      answers: [],
+      interview_mode: "text",
+      current_question_index: 0,
+      question_start_times: [new Date().toISOString()],
+      session_expired_at: null,
+      submitted_at: null,
+    };
+    const updatedAttempt = { ...attempt, current_question_index: 1, answers: [{ questionId: questions[0].id, question: questions[0].prompt, answer: "My response" }] };
+    const submissionQueries = [query({ data: attempt, error: null }), query({ data: updatedAttempt, error: null })];
+    const questionLookup = query({ data: questions, error: null });
+    const service = { from: vi.fn((table: string) => table === "interview_submissions" ? submissionQueries.shift() : questionLookup) };
+    vi.mocked(createServiceRoleSupabaseClient).mockReturnValue(service as never);
+
+    const { res, result } = response();
+    await saveInterviewAnswer({ ...authRequest, body: { sessionId: attempt.id, questionId: questions[0].id, answer: "My response", targetIndex: 1 } } as Request, res, vi.fn() as never);
+
+    expect(result.statusCode).toBe(200);
+    expect(result.body).toMatchObject({ session: { id: attempt.id, index: 1, deadlineAt: null } });
+  });
+
+  it("submits the active attempt before the final question timer expires", async () => {
+    const questions = Array.from({ length: 10 }, (_, position) => ({
+      id: `00000000-0000-4000-8000-${String(position + 1).padStart(12, "0")}`,
+      prompt: `Question ${position + 1} prompt?`,
+      position,
+      created_at: new Date().toISOString(),
+    }));
+    const attempt = {
+      id: "11111111-1111-4111-8111-111111111111",
+      user_id: user.id,
+      status: "Under Review",
+      answers: [],
+      interview_mode: "text",
+      current_question_index: 9,
+      question_start_times: Array.from({ length: 10 }, () => new Date().toISOString()),
+      session_expired_at: null,
+      submitted_at: null,
+    };
+    const submission = { id: attempt.id, status: "Under Review", submitted_at: new Date().toISOString() };
+    const submissionQueries = [query({ data: attempt, error: null }), query({ data: submission, error: null })];
+    const questionLookup = query({ data: questions, error: null });
+    const service = { from: vi.fn((table: string) => table === "interview_submissions" ? submissionQueries.shift() : questionLookup) };
+    vi.mocked(createServiceRoleSupabaseClient).mockReturnValue(service as never);
+
+    const { res, result } = response();
+    const answers = questions.map(({ id: questionId, prompt }) => ({ questionId, prompt, answer: `Answer to ${prompt}` }));
+    await submitInterview({ ...authRequest, body: { sessionId: attempt.id, answers } } as Request, res, vi.fn() as never);
+
+    expect(result.statusCode).toBe(201);
+    expect(result.body).toEqual({ submission });
   });
 
   it("starts the server timer only for the displayed question on the requested attempt", async () => {

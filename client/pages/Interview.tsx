@@ -18,10 +18,10 @@ export default function Interview() {
   const [videoState, setVideoState] = useState<VideoState>("connecting");
   const [remaining, setRemaining] = useState(60);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const [finalQuestionComplete, setFinalQuestionComplete] = useState(false);
   const [videoError, setVideoError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSavingAnswer, setIsSavingAnswer] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [questionStartRetry, setQuestionStartRetry] = useState(0);
   const [schemaUpgradeRequired, setSchemaUpgradeRequired] = useState(false);
@@ -33,6 +33,8 @@ export default function Interview() {
   const runRef = useRef(run);
   const deadlineMonotonic = useRef<number | null>(null);
   const timedOutRef = useRef(false);
+  const transitionInProgress = useRef(false);
+  const submittingRef = useRef(false);
   const videoStream = useRef<MediaStream | null>(null);
   const videoRequestId = useRef(0);
   const videoPreview = useRef<HTMLVideoElement | null>(null);
@@ -48,8 +50,11 @@ export default function Interview() {
     setRemaining(nextRun.deadlineAt === null ? 0 : Math.max(0, Math.ceil((nextRun.deadlineAt - nextRun.serverNow) / 1000)));
     setRun(nextRun);
     setMode("text");
+    currentStepRef.current = nextRun.index;
     setCurrentStep(nextRun.index);
-    setAnswers(Object.fromEntries(nextRun.answers.map(({ questionId, answer }) => [questionId, answer])));
+    const nextAnswers = Object.fromEntries(nextRun.answers.map(({ questionId, answer }) => [questionId, answer]));
+    answersRef.current = nextAnswers;
+    setAnswers(nextAnswers);
   }, []);
 
   useEffect(() => {
@@ -105,7 +110,6 @@ export default function Interview() {
       if (result.session.index !== currentStepRef.current) {
         timedOutRef.current = false;
         setRemaining(result.session.deadlineAt === null ? 0 : Math.max(0, Math.ceil((result.session.deadlineAt - result.session.serverNow) / 1000)));
-        setFinalQuestionComplete(false);
       }
       runRef.current = result.session;
       setRun(result.session);
@@ -115,7 +119,9 @@ export default function Interview() {
   }, []);
 
   const handleAnswerChange = (question: InterviewQuestion, value: string) => {
-    setAnswers((current) => ({ ...current, [question.id]: value }));
+    const nextAnswers = { ...answersRef.current, [question.id]: value };
+    answersRef.current = nextAnswers;
+    setAnswers(nextAnswers);
     if (!run || run.deadlineAt === null || timedOutRef.current) return;
     if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
@@ -123,10 +129,62 @@ export default function Interview() {
     }, 550);
   };
 
+  const completeInterview = useCallback(async (question: InterviewQuestion, answer: string) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setIsSubmitting(true);
+    setError("");
+    answersRef.current = { ...answersRef.current, [question.id]: answer };
+    setAnswers(answersRef.current);
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    try {
+      await saveChain.current;
+      await enqueueSave(question, answer, currentStepRef.current);
+      const sessionId = runRef.current?.id;
+      if (!sessionId) return;
+      const result = await submitInterview(sessionId, questions.map(({ id, prompt }) => ({ questionId: id, prompt, answer: id === question.id ? answer : answersRef.current[id] ?? "" })));
+      setStatus(result.submission.status);
+      runRef.current = null;
+      setRun(null);
+    } finally {
+      submittingRef.current = false;
+      setIsSubmitting(false);
+    }
+  }, [enqueueSave, questions]);
+
+  const handleNextQuestion = async () => {
+    const question = questions[currentStepRef.current];
+    const answer = question ? answersRef.current[question.id] ?? "" : "";
+    if (!runRef.current || !question || !answer.trim() || transitionInProgress.current || timedOutRef.current || submittingRef.current) {
+      if (question && !answer.trim()) setError("Please enter an answer before continuing.");
+      return;
+    }
+    transitionInProgress.current = true;
+    setIsSavingAnswer(true);
+    setError("");
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    try {
+      await saveChain.current;
+      await enqueueSave(question, answer, currentStepRef.current + 1);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Unable to save your answer.");
+    } finally {
+      transitionInProgress.current = false;
+      setIsSavingAnswer(false);
+    }
+  };
+
   const advanceAfterTimeout = useCallback(async () => {
     const question = questions[currentStepRef.current];
-    if (!run || !question || timedOutRef.current || isSubmitting) return;
+    if (!run || !question || timedOutRef.current || transitionInProgress.current || submittingRef.current) return;
     timedOutRef.current = true;
+    transitionInProgress.current = true;
     setIsTransitioning(true);
     setError("");
     if (saveTimer.current !== null) {
@@ -136,21 +194,22 @@ export default function Interview() {
     await new Promise((resolve) => window.setTimeout(resolve, 900));
     try {
       if (currentStepRef.current === questions.length - 1) {
-        await enqueueSave(question, answersRef.current[question.id] ?? "", currentStepRef.current);
-        setFinalQuestionComplete(true);
+        await completeInterview(question, answersRef.current[question.id] ?? "");
       } else {
         await enqueueSave(question, answersRef.current[question.id] ?? "", currentStepRef.current + 1);
       }
       setIsTransitioning(false);
+      transitionInProgress.current = false;
     } catch (saveError) {
       timedOutRef.current = false;
       setIsTransitioning(false);
+      transitionInProgress.current = false;
       setError(saveError instanceof Error ? saveError.message : "Unable to save your answer.");
     }
-  }, [enqueueSave, isSubmitting, questions, run]);
+  }, [completeInterview, enqueueSave, questions, run]);
 
   useEffect(() => {
-    if (!run || run.deadlineAt === null || finalQuestionComplete) return;
+    if (!run || run.deadlineAt === null) return;
     const tick = () => {
       const deadline = deadlineMonotonic.current ?? performance.now();
       const seconds = Math.max(0, Math.ceil((deadline - performance.now()) / 1000));
@@ -160,25 +219,19 @@ export default function Interview() {
     tick();
     const interval = window.setInterval(tick, 100);
     return () => window.clearInterval(interval);
-  }, [advanceAfterTimeout, finalQuestionComplete, run]);
+  }, [advanceAfterTimeout, run]);
 
   const handleSubmit = async () => {
-    if (isSubmitting || !run || !questions.length) return;
-    setError("");
-    setIsSubmitting(true);
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
+    const question = questions[currentStepRef.current];
+    const answer = question ? answersRef.current[question.id] ?? "" : "";
+    if (!runRef.current || !question || !answer.trim() || submittingRef.current || transitionInProgress.current) {
+      if (question && !answer.trim()) setError("Please enter an answer before submitting.");
+      return;
     }
     try {
-      await saveChain.current;
-      const result = await submitInterview(run.id, questions.map(({ id, prompt }) => ({ questionId: id, prompt, answer: answersRef.current[id] ?? "" })));
-      setStatus(result.submission.status);
-      setRun(null);
+      await completeInterview(question, answer);
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Unable to submit your interview.");
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -273,10 +326,13 @@ export default function Interview() {
                     <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-[#fbfcfd] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-lg bg-white text-navy"><Clock3 size={19} /></span><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-slate-500">Time remaining</p><p className="mt-0.5 text-2xl font-extrabold tabular-nums text-navy" aria-live="off">{run.deadlineAt === null ? "Starting…" : `${remaining}s`}</p></div></div><div className="w-full sm:max-w-[390px]"><div className="mb-2 flex items-center justify-between text-xs"><span className="font-bold text-navy">Question {currentStep + 1} of {questions.length}</span><span className="font-semibold text-slate-400">{Math.round(progress)}% complete</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-200"><div className="h-full bg-orange transition-[width] duration-300" style={{ width: `${progress}%` }} /></div></div></div>
                     {isTransitioning && <p className="rounded-lg border border-orange/20 bg-orange/5 px-4 py-3 text-sm font-semibold text-navy" role="status">Time is up. Moving to the next question...</p>}
                     <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-400"><Monitor size={13} /> Text-based interview</div>
-                    <label className="block" key={currentQuestion.id}><span className="block text-lg font-bold leading-7 text-navy sm:text-xl">{currentQuestion.prompt}</span><textarea maxLength={5000} rows={7} disabled={isTransitioning || run.deadlineAt === null || remaining === 0} value={answers[currentQuestion.id] ?? ""} onChange={(event) => handleAnswerChange(currentQuestion, event.target.value)} className="mt-4 min-h-48 w-full resize-y rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10 disabled:bg-slate-50" placeholder="Type your response here" /></label>
+                    <label className="block" key={currentQuestion.id}><span className="block text-lg font-bold leading-7 text-navy sm:text-xl">{currentQuestion.prompt}</span><textarea maxLength={5000} rows={7} required aria-required="true" disabled={isTransitioning || run.deadlineAt === null || remaining === 0 || isSavingAnswer || isSubmitting} value={answers[currentQuestion.id] ?? ""} onChange={(event) => handleAnswerChange(currentQuestion, event.target.value)} className="mt-4 min-h-48 w-full resize-y rounded-lg border border-slate-200 bg-white p-4 text-sm leading-6 text-navy outline-none transition focus:border-orange focus:ring-2 focus:ring-orange/10 disabled:bg-slate-50" placeholder="Type your response here" /></label>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
+                      {currentStep < questions.length - 1 ? <button type="button" onClick={() => void handleNextQuestion()} disabled={isTransitioning || isSavingAnswer || isSubmitting || run.deadlineAt === null || remaining === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-orange px-6 py-3 text-sm font-extrabold text-navy transition hover:bg-orange-light disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{isSavingAnswer ? <><LoaderCircle size={15} className="animate-spin" /> Saving…</> : "Next Question"}</button> : <button type="button" onClick={() => void handleSubmit()} disabled={isTransitioning || isSavingAnswer || isSubmitting || run.deadlineAt === null || remaining === 0} className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-orange px-6 py-3 text-sm font-extrabold text-navy transition hover:bg-orange-light disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto">{isSubmitting ? <><LoaderCircle size={15} className="animate-spin" /> Submitting…</> : "Submit Interview"}</button>}
+                    </div>
                   </>}
                   {error && <div className="flex flex-col gap-2 rounded-md border border-red-200 bg-red-50 p-3 text-xs leading-5 text-red-800" role="alert"><span className="flex items-start gap-2"><CircleAlert size={15} className="mt-0.5 shrink-0" />{error}</span>{run.deadlineAt === null && <button type="button" onClick={() => { setError(""); setQuestionStartRetry((retry) => retry + 1); }} className="self-start font-bold underline">Retry question timer</button>}</div>}
-                  <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-slate-400">Signed in as {session?.user.email}</p>{currentStep === questions.length - 1 && finalQuestionComplete && <button type="button" onClick={() => void handleSubmit()} disabled={isSubmitting} className="inline-flex items-center justify-center gap-2 rounded-lg bg-orange px-6 py-3 text-sm font-extrabold text-navy transition hover:bg-orange-light disabled:cursor-not-allowed disabled:opacity-50">{isSubmitting ? <><LoaderCircle size={15} className="animate-spin" /> Submitting…</> : "Submit Interview"}</button>}</div>
+                  <div className="flex flex-col-reverse gap-3 border-t border-slate-100 pt-5 sm:flex-row sm:items-center sm:justify-between"><p className="text-xs text-slate-400">Signed in as {session?.user.email}</p>{currentStep === questions.length - 1 && <span className="text-sm font-semibold text-slate-500">Answer Question {questions.length} to submit your interview.</span>}</div>
                 </div>
                   : <>
                     <div className="mb-6"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-orange">Choose your interview format</p><h2 className="mt-2 text-xl font-extrabold tracking-tight text-navy sm:text-2xl">How would you like to interview?</h2><p className="mt-2 text-sm leading-6 text-slate-500">Select an interview experience to continue. Your questions and answers remain private.</p></div>
