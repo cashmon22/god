@@ -35,8 +35,8 @@ export function getMyInterview() {
   }>("/api/interview/me");
 }
 
-export function startInterview() {
-  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions", {
+export function startTextInterview() {
+  return apiRequest<{ session: InterviewRun; serverNow: number; questions: InterviewQuestion[] }>("/api/interview/sessions", {
     method: "POST",
     body: JSON.stringify({ mode: "text" }),
   });

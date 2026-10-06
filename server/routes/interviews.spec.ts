@@ -82,13 +82,36 @@ describe("interview attempts", () => {
     await startInterview({ ...authRequest, body: { mode: "text" } } as Request, res, vi.fn() as never);
 
     expect(result.statusCode).toBe(201);
-    expect(result.body).toMatchObject({ session: { id: "11111111-1111-4111-8111-111111111111", index: 0, deadlineAt: null } });
+    expect(result.body).toMatchObject({
+      session: { id: "11111111-1111-4111-8111-111111111111", index: 0, deadlineAt: null },
+      questions,
+    });
+    expect((result.body as { session: { id: string; index: number }; questions: unknown[] }).session.id).toBe(newAttempt.id);
+    expect((result.body as { questions: unknown[] }).questions).toHaveLength(10);
     expect((archiveUpdate as { update: ReturnType<typeof vi.fn> }).update).toHaveBeenCalledWith(expect.objectContaining({ session_expired_at: expect.any(String) }));
     expect((insertAttempt as { insert: ReturnType<typeof vi.fn> }).insert).toHaveBeenCalledWith(expect.objectContaining({
       user_id: user.id,
       question_start_times: [],
       submitted_at: null,
     }));
+  });
+
+  it("preserves completed submissions and blocks starting another interview", async () => {
+    const completedSubmission = { id: "completed-attempt", status: "Under Review" };
+    const activeLookup = query({ data: null, error: null });
+    const submittedLookup = query({ data: completedSubmission, error: null });
+    const questionLookup = query({ data: [{ id: "question-1", prompt: "A valid interview question?", position: 0 }], error: null });
+    const submissionQueries = [activeLookup, submittedLookup];
+    const service = { from: vi.fn((table: string) => table === "interview_submissions" ? submissionQueries.shift() : questionLookup) };
+    vi.mocked(createServiceRoleSupabaseClient).mockReturnValue(service as never);
+
+    const { res, result } = response();
+    await startInterview({ ...authRequest, body: { mode: "text" } } as Request, res, vi.fn() as never);
+
+    expect(result.statusCode).toBe(409);
+    expect(result.body).toEqual({ error: "Your interview has already been submitted." });
+    expect(service.from).toHaveBeenCalledTimes(3);
+    expect(submissionQueries).toHaveLength(0);
   });
 
   it("starts the server timer only for the displayed question on the requested attempt", async () => {

@@ -169,7 +169,7 @@ export const startInterview: RequestHandler = async (req, res) => {
     res.status(500).json({ error: "Unable to start your interview." });
     return;
   }
-  res.status(201).json(sessionResponse(data as InterviewSession));
+  res.status(201).json({ ...sessionResponse(data as InterviewSession), questions });
 };
 
 export const startInterviewQuestion: RequestHandler = async (req, res) => {
