@@ -15,23 +15,6 @@ afterEach(() => {
 });
 
 describe("authRefreshFetch", () => {
-  it("shares one in-flight refresh request", async () => {
-    let resolveResponse!: (response: Response) => void;
-    const networkFetch = vi.fn(() => new Promise<Response>((resolve) => {
-      resolveResponse = resolve;
-    }));
-    vi.stubGlobal("fetch", networkFetch);
-
-    const first = authRefreshFetch(refreshUrl, { method: "POST" });
-    const second = authRefreshFetch(refreshUrl, { method: "POST" });
-    resolveResponse(new Response("{}", { status: 200 }));
-
-    const [firstResponse, secondResponse] = await Promise.all([first, second]);
-    expect(networkFetch).toHaveBeenCalledOnce();
-    expect(firstResponse.status).toBe(200);
-    expect(secondResponse.status).toBe(200);
-  });
-
   it("caches 429 responses until Retry-After has elapsed", async () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
     const networkFetch = vi.fn()

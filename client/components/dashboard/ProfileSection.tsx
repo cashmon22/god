@@ -123,7 +123,12 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
           detectSessionInUrl: false,
         },
       });
-      const { error: verificationError } = await verifier.auth.signInWithPassword({ email, password: currentPassword });
+      let verificationError;
+      try {
+        ({ error: verificationError } = await verifier.auth.signInWithPassword({ email, password: currentPassword }));
+      } finally {
+        await verifier.auth.dispose();
+      }
       if (verificationError) {
         setPasswordError("Your current password could not be verified.");
         return;

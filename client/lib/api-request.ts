@@ -3,6 +3,19 @@ import { getCurrentSession, supabase } from "./supabase";
 
 const SESSION_EXPIRED_MESSAGE = "Your secure session has expired. Please sign in again.";
 const REFRESH_UNAVAILABLE_MESSAGE = "Your session could not be refreshed right now. Please try again.";
+let refreshInFlight: ReturnType<typeof supabase.auth.refreshSession> | null = null;
+
+function refreshSession() {
+  if (!refreshInFlight) {
+    const pending = supabase.auth.refreshSession();
+    refreshInFlight = pending;
+    void pending.then(
+      () => { if (refreshInFlight === pending) refreshInFlight = null; },
+      () => { if (refreshInFlight === pending) refreshInFlight = null; },
+    );
+  }
+  return refreshInFlight;
+}
 
 function isInvalidSessionError(error: { code?: string | undefined; status?: number | undefined } | null | undefined) {
   return error?.status === 401 || ["invalid_grant", "refresh_token_not_found", "refresh_token_already_used", "session_expired"].includes(error?.code ?? "");
@@ -10,7 +23,7 @@ function isInvalidSessionError(error: { code?: string | undefined; status?: numb
 
 async function currentSession(refresh = false): Promise<Session> {
   const { data: { session }, error } = refresh
-    ? await supabase.auth.refreshSession()
+    ? await refreshSession()
     : await getCurrentSession();
   if (error) {
     if (isInvalidSessionError(error)) throw new Error(SESSION_EXPIRED_MESSAGE);
