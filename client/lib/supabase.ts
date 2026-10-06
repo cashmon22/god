@@ -1,5 +1,5 @@
 import { createClient, type Session } from "@supabase/supabase-js";
-import { authRefreshFetch, clearRefreshRateLimit, isRefreshRateLimited } from "./auth-refresh-fetch";
+import { authRefreshFetch, clearRefreshRateLimit, isRefreshRateLimited, recordSessionRead, trackSupabaseClient } from "./auth-refresh-fetch";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -33,6 +33,13 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     storageKey: tabStorageKey,
   },
 });
+const releasePrimaryTracking = trackSupabaseClient("primary");
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    releasePrimaryTracking();
+    void supabase.auth.dispose();
+  });
+}
 
 type SessionResponse = Awaited<ReturnType<typeof supabase.auth.getSession>>;
 let sessionRead: Promise<SessionResponse> | null = null;
@@ -54,7 +61,8 @@ function storedSessionDuringRateLimit(): Session | null {
   }
 }
 
-export function getCurrentSession() {
+export function getCurrentSession(source = "application") {
+  recordSessionRead(source);
   if (sessionRead) return sessionRead;
 
   const pending = supabase.auth.getSession().then((result) => {

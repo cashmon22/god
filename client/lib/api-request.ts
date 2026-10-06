@@ -1,30 +1,29 @@
 import type { Session } from "@supabase/supabase-js";
 import { getCurrentSession, supabase } from "./supabase";
+import { isRefreshRateLimited, recordApplicationRefreshRequest } from "./auth-refresh-fetch";
 
 const SESSION_EXPIRED_MESSAGE = "Your secure session has expired. Please sign in again.";
 const REFRESH_UNAVAILABLE_MESSAGE = "Your session could not be refreshed right now. Please try again.";
-let refreshInFlight: ReturnType<typeof supabase.auth.refreshSession> | null = null;
 
-function refreshSession() {
-  if (!refreshInFlight) {
-    const pending = supabase.auth.refreshSession();
-    refreshInFlight = pending;
-    void pending.then(
-      () => { if (refreshInFlight === pending) refreshInFlight = null; },
-      () => { if (refreshInFlight === pending) refreshInFlight = null; },
-    );
+async function refreshSession(source: string) {
+  const finishTracking = recordApplicationRefreshRequest(source);
+  if (isRefreshRateLimited()) {
+    finishTracking();
+    throw new Error(REFRESH_UNAVAILABLE_MESSAGE);
   }
-  return refreshInFlight;
+  try {
+    return await supabase.auth.refreshSession();
+  } finally {
+    finishTracking();
+  }
 }
 
 function isInvalidSessionError(error: { code?: string | undefined; status?: number | undefined } | null | undefined) {
   return error?.status === 401 || ["invalid_grant", "refresh_token_not_found", "refresh_token_already_used", "session_expired"].includes(error?.code ?? "");
 }
 
-async function currentSession(refresh = false): Promise<Session> {
-  const { data: { session }, error } = refresh
-    ? await refreshSession()
-    : await getCurrentSession();
+async function currentSession(source: string): Promise<Session> {
+  const { data: { session }, error } = await getCurrentSession(source);
   if (error) {
     if (isInvalidSessionError(error)) throw new Error(SESSION_EXPIRED_MESSAGE);
     throw new Error(REFRESH_UNAVAILABLE_MESSAGE);
@@ -55,18 +54,16 @@ function responseError(status: number, message?: string) {
 /** Authenticated JSON request to the app's own Express API (/api/*). */
 export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
   try {
-    let session = await currentSession();
-    let refreshed = false;
-    if (session.expires_at !== undefined && session.expires_at <= Math.floor(Date.now() / 1000) + 30) {
-      session = await currentSession(true);
-      refreshed = true;
-    }
-
+    const session = await currentSession(`api:${path.split("?")[0]}`);
     let response = await send(path, init, session.access_token);
-    if (response.status === 401 && !refreshed) {
-      session = await currentSession(true);
-      refreshed = true;
-      response = await send(path, init, session.access_token);
+    if (response.status === 401) {
+      const result = await refreshSession(path.split("?")[0]);
+      if (result.error) {
+        if (isInvalidSessionError(result.error)) throw new Error(SESSION_EXPIRED_MESSAGE);
+        throw new Error(REFRESH_UNAVAILABLE_MESSAGE);
+      }
+      if (!result.data.session) throw new Error(SESSION_EXPIRED_MESSAGE);
+      response = await send(path, init, result.data.session.access_token);
     }
 
     const payload = (await response.json().catch(() => null)) as { error?: string } | T | null;
@@ -74,14 +71,14 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
       const message = payload && typeof payload === "object" && "error" in payload && typeof payload.error === "string"
         ? payload.error
         : undefined;
-      console.error(`[api] ${init?.method ?? "GET"} ${path} failed`, response.status, payload);
+      console.error(`[api] ${init?.method ?? "GET"} ${path} failed`, response.status);
       throw responseError(response.status, message);
     }
     return payload as T;
   } catch (error) {
     if (error instanceof Error && [SESSION_EXPIRED_MESSAGE, REFRESH_UNAVAILABLE_MESSAGE].includes(error.message)) throw error;
     if (error instanceof TypeError) {
-      console.error(`[api] Network error calling ${path}`, error);
+      console.error(`[api] Network error calling ${path}`);
       throw new Error("Could not reach the server. Check your internet connection and try again.");
     }
     throw error;

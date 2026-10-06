@@ -7,6 +7,7 @@ import type { Session } from "@supabase/supabase-js";
 import { BadgeCheck, Bell, CalendarDays, CheckCircle2, KeyRound, Mail, MonitorCheck, Save, ShieldCheck, UserRound } from "lucide-react";
 import { showInAppNotifications } from "@/lib/account-preferences";
 import { supabase } from "@/lib/supabase";
+import { trackSupabaseClient } from "@/lib/auth-refresh-fetch";
 
 interface ProfileSectionProps {
   session: Session | null;
@@ -123,11 +124,13 @@ export default function ProfileSection({ session, applicationStatus, deviceStatu
           detectSessionInUrl: false,
         },
       });
+      const releaseVerifierTracking = trackSupabaseClient("isolated");
       let verificationError;
       try {
         ({ error: verificationError } = await verifier.auth.signInWithPassword({ email, password: currentPassword }));
       } finally {
         await verifier.auth.dispose();
+        releaseVerifierTracking();
       }
       if (verificationError) {
         setPasswordError("Your current password could not be verified.");
