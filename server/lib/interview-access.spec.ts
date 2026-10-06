@@ -40,11 +40,15 @@ beforeEach(() => {
   vi.clearAllMocks();
   interviewStatus = "Under Review";
   vi.mocked(supabase.auth.getUser).mockResolvedValue({ data: { user } as never, error: null });
+  const lookup = {
+    maybeSingle: vi.fn(async () => ({ data: interviewStatus ? { status: interviewStatus } : null, error: null })),
+    limit: vi.fn(() => lookup),
+    order: vi.fn(() => lookup),
+    not: vi.fn(() => lookup),
+  };
   vi.mocked(createServiceRoleSupabaseClient).mockReturnValue({
     from: vi.fn(() => ({
-      select: vi.fn(() => ({
-        eq: vi.fn(() => ({ maybeSingle: vi.fn(async () => ({ data: interviewStatus ? { status: interviewStatus } : null, error: null })) })),
-      })),
+      select: vi.fn(() => ({ eq: vi.fn(() => lookup) })),
     })),
   } as never);
 });

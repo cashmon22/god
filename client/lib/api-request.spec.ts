@@ -93,17 +93,59 @@ describe("apiRequest authentication", () => {
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it("does not retry a protected request or report sign-out when refresh is temporarily unavailable", async () => {
+  it("shares one refresh result across concurrent requests", async () => {
+    vi.mocked(auth.getSession).mockResolvedValue({ data: { session: session("expired", 0) }, error: null });
+    let resolveRefresh!: (result: unknown) => void;
+    vi.mocked(auth.refreshSession).mockImplementation(() => new Promise((resolve) => {
+      resolveRefresh = resolve;
+    }) as never);
+    vi.mocked(fetch).mockImplementation(async () => response(200, { success: true }));
+
+    const firstRequest = apiRequest("/api/admin/dashboard-stats");
+    const secondRequest = apiRequest("/api/admin/review-counts");
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(auth.refreshSession).toHaveBeenCalledOnce();
+
+    resolveRefresh({ data: { session: session("current"), user: null }, error: null });
+    await expect(Promise.all([firstRequest, secondRequest])).resolves.toEqual([
+      { success: true },
+      { success: true },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(fetch).mock.calls.map((call) => new Headers(call[1]?.headers).get("Authorization"))).toEqual([
+      "Bearer current",
+      "Bearer current",
+    ]);
+  });
+
+  it("requires login when Supabase reports a revoked refresh token", async () => {
+    vi.mocked(auth.getSession).mockResolvedValue({ data: { session: session("expired", 0) }, error: null });
+    vi.mocked(auth.refreshSession).mockResolvedValue({
+      data: { session: null, user: null },
+      error: { message: "Refresh token is invalid", status: 400, code: "invalid_grant" },
+    } as never);
+
+    await expect(apiRequest("/api/admin/dashboard-stats")).rejects.toThrow("Your secure session has expired. Please sign in again.");
+    expect(auth.refreshSession).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("does not retry protected requests or sign out when refresh is rate limited", async () => {
     vi.mocked(auth.getSession).mockResolvedValue({ data: { session: session("old") }, error: null });
     vi.mocked(auth.refreshSession).mockResolvedValue({
       data: { session: null, user: null },
-      error: { message: "Rate limited", status: 503, code: "over_request_rate_limit" },
+      error: { message: "Rate limited", status: 429, code: "over_request_rate_limit" },
     } as never);
     vi.mocked(fetch).mockResolvedValue(response(401, { error: "Authentication required" }));
 
-    await expect(apiRequest("/api/admin/applications/abc", { method: "DELETE" })).rejects.toThrow("Your session could not be refreshed right now. Please try again.");
+    const results = await Promise.allSettled([
+      apiRequest("/api/admin/applications/abc", { method: "DELETE" }),
+      apiRequest("/api/admin/dashboard-stats"),
+    ]);
 
+    expect(results.every((result) => result.status === "rejected" && result.reason.message === "Your session could not be refreshed right now. Please try again.")).toBe(true);
     expect(auth.refreshSession).toHaveBeenCalledOnce();
-    expect(fetch).toHaveBeenCalledOnce();
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 });

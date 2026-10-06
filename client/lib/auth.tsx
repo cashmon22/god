@@ -15,8 +15,9 @@ type AuthContextValue = {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 function isSessionRevokedError(error: unknown) {
-  if (typeof error !== "object" || error === null || !("code" in error)) return false;
-  return ["refresh_token_not_found", "refresh_token_already_used", "session_expired"].includes(String(error.code));
+  if (typeof error !== "object" || error === null) return false;
+  if ("status" in error && error.status === 401) return true;
+  return "code" in error && ["invalid_grant", "refresh_token_not_found", "refresh_token_already_used", "session_expired"].includes(String(error.code));
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

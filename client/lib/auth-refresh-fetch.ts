@@ -1,7 +1,6 @@
 const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
 const RATE_LIMIT_STORAGE_KEY = "app.supabase.auth.refresh-rate-limit-until";
 
-let refreshInFlight: Promise<Response> | null = null;
 let rateLimitedResponse: Response | null = null;
 let rateLimitedUntil = readRateLimitUntil();
 
@@ -26,10 +25,11 @@ function isRefreshRequest(input: RequestInfo | URL, init?: RequestInit) {
 function retryDelayMs(value: string | null) {
   if (!value) return DEFAULT_RATE_LIMIT_DELAY_MS;
   const seconds = Number(value);
-  if (Number.isFinite(seconds) && seconds >= 0) return seconds * 1000;
-  const retryAt = Date.parse(value);
-  return Number.isFinite(retryAt)
-    ? Math.max(0, retryAt - Date.now())
+  const delay = Number.isFinite(seconds)
+    ? seconds * 1000
+    : Date.parse(value) - Date.now();
+  return Number.isFinite(delay)
+    ? Math.max(1_000, delay)
     : DEFAULT_RATE_LIMIT_DELAY_MS;
 }
 
@@ -42,10 +42,6 @@ function rateLimitResponse() {
     status: 429,
     headers: { "Content-Type": "application/json", "Retry-After": String(retryAfter) },
   });
-}
-
-function logRefresh(event: "started" | "already in progress" | "completed" | "rate limited") {
-  if (import.meta.env.DEV) console.info(`[auth] refresh ${event}`);
 }
 
 export function isRefreshRateLimited() {
@@ -64,43 +60,19 @@ export function clearRefreshRateLimit() {
 
 export const authRefreshFetch: typeof fetch = async (input, init) => {
   if (!isRefreshRequest(input, init)) return fetch(input, init);
+  if (isRefreshRateLimited()) return rateLimitedResponse?.clone() ?? rateLimitResponse();
 
-  if (isRefreshRateLimited()) {
-    logRefresh("rate limited");
-    return rateLimitedResponse?.clone() ?? rateLimitResponse();
-  }
-  if (rateLimitedResponse) clearRefreshRateLimit();
-
-  if (refreshInFlight) {
-    logRefresh("already in progress");
-    return (await refreshInFlight).clone();
-  }
-
-  logRefresh("started");
-  const pending = fetch(input, init).then((response) => {
-    if (response.status === 429) {
-      rateLimitedResponse = response.clone();
-      rateLimitedUntil = Date.now() + Math.max(
-        retryDelayMs(response.headers.get("Retry-After")),
-        DEFAULT_RATE_LIMIT_DELAY_MS,
-      );
-      try {
-        window.sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, String(rateLimitedUntil));
-      } catch {
-        // Session storage is optional outside standard browser contexts.
-      }
-      logRefresh("rate limited");
-    } else {
-      clearRefreshRateLimit();
-      if (response.ok) logRefresh("completed");
+  const response = await fetch(input, init);
+  if (response.status === 429) {
+    rateLimitedResponse = response.clone();
+    rateLimitedUntil = Date.now() + retryDelayMs(response.headers.get("Retry-After"));
+    try {
+      window.sessionStorage.setItem(RATE_LIMIT_STORAGE_KEY, String(rateLimitedUntil));
+    } catch {
+      // Session storage is optional outside standard browser contexts.
     }
-    return response;
-  });
-  refreshInFlight = pending;
-
-  try {
-    return (await pending).clone();
-  } finally {
-    if (refreshInFlight === pending) refreshInFlight = null;
+  } else if (rateLimitedResponse) {
+    clearRefreshRateLimit();
   }
+  return response;
 };

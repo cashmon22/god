@@ -1,4 +1,4 @@
-import { createClient, navigatorLock, type Session } from "@supabase/supabase-js";
+import { createClient, type Session } from "@supabase/supabase-js";
 import { authRefreshFetch, clearRefreshRateLimit, isRefreshRateLimited } from "./auth-refresh-fetch";
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
@@ -31,7 +31,6 @@ export const supabase = createClient(supabaseUrl, supabasePublishableKey, {
     detectSessionInUrl: true,
     storage: authStorage,
     storageKey: tabStorageKey,
-    lock: navigatorLock,
   },
 });
 

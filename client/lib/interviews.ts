@@ -4,9 +4,10 @@ import { notifyAdminReviewCountsChanged } from "./admin-dashboard";
 export type InterviewQuestion = { id: string; prompt: string; position: number; created_at: string };
 export type InterviewAnswer = { questionId: string; question: string; answer: string };
 export type InterviewRun = {
+  id: string;
   index: number;
   answers: InterviewAnswer[];
-  deadlineAt: number;
+  deadlineAt: number | null;
   serverNow: number;
   status: string;
 };
@@ -30,30 +31,35 @@ export function getInterviewQuestions() {
 export function getMyInterview() {
   return apiRequest<{
     submission: Pick<InterviewSubmission, "id" | "status" | "answers" | "submitted_at" | "reviewed_at"> | null;
-    session?: InterviewRun;
-    expired?: boolean;
     schemaUpgradeRequired?: boolean;
   }>("/api/interview/me");
 }
 
-export function startInterview() {
-  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions", {
+export function startTextInterview() {
+  return apiRequest<{ session: InterviewRun; serverNow: number; questions: InterviewQuestion[] }>("/api/interview/sessions", {
     method: "POST",
     body: JSON.stringify({ mode: "text" }),
   });
 }
 
-export function saveInterviewAnswer(questionId: string, answer: string, targetIndex: number) {
-  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions/answer", {
-    method: "PATCH",
-    body: JSON.stringify({ questionId, answer, targetIndex }),
+export function startInterviewQuestion(sessionId: string, questionIndex: number) {
+  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions/question", {
+    method: "POST",
+    body: JSON.stringify({ sessionId, questionIndex }),
   });
 }
 
-export function submitInterview(answers: Array<{ questionId: string; prompt: string; answer: string }>) {
+export function saveInterviewAnswer(sessionId: string, questionId: string, answer: string, targetIndex: number) {
+  return apiRequest<{ session: InterviewRun; serverNow: number }>("/api/interview/sessions/answer", {
+    method: "PATCH",
+    body: JSON.stringify({ sessionId, questionId, answer, targetIndex }),
+  });
+}
+
+export function submitInterview(sessionId: string, answers: Array<{ questionId: string; prompt: string; answer: string }>) {
   return apiRequest<{ submission: { id: string; status: InterviewSubmission["status"]; submitted_at: string } }>("/api/interview/submissions", {
     method: "POST",
-    body: JSON.stringify({ answers }),
+    body: JSON.stringify({ sessionId, answers }),
   });
 }
 

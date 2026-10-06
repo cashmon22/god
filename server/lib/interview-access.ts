@@ -4,7 +4,7 @@ import { createServiceRoleSupabaseClient, supabase } from "./supabase";
 
 export async function getInterviewStatus(user: Pick<User, "id">) {
   const service = createServiceRoleSupabaseClient();
-  const { data: interview, error } = await service.from("interview_submissions").select("status").eq("user_id", user.id).maybeSingle();
+  const { data: interview, error } = await service.from("interview_submissions").select("status").eq("user_id", user.id).not("submitted_at", "is", null).order("submitted_at", { ascending: false }).limit(1).maybeSingle();
   if (error) throw error;
   return interview?.status as "Under Review" | "Approved" | "Rejected" | undefined ?? null;
 }
