@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Check, CircleHelp, Cloud, FileUp, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { PRODUCT_RESEARCH_TEMPLATE, type ProductResearchDraft, type ProductResearchEvidence, type ProductResearchSectionId } from "@shared/product-research";
@@ -35,7 +35,7 @@ const WorkspaceEditableContext = createContext(true);
 
 function Field({ label, value, onChange, placeholder, type = "textarea", required = false }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: "textarea" | "input" | "url" | "number"; required?: boolean }) {
   const editable = useContext(WorkspaceEditableContext);
-  const id = `research-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const id = `research-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${useId()}`;
   const className = "mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3.5 py-3 text-sm text-navy outline-none transition placeholder:text-slate-400 focus:border-orange focus:ring-2 focus:ring-orange/15";
   return <label htmlFor={id} className="block text-xs font-bold text-slate-700">{label}{required && <span className="ml-1 text-orange">*</span>}{type === "textarea" ? <textarea id={id} value={value} placeholder={placeholder} rows={3} required={required} disabled={!editable} onChange={(event) => onChange(event.target.value)} className={`${className} resize-y disabled:bg-slate-50 disabled:text-slate-500`} /> : <input id={id} value={value} type={type === "input" ? "text" : type} placeholder={placeholder} required={required} disabled={!editable} onChange={(event) => onChange(event.target.value)} className={`${className} disabled:bg-slate-50 disabled:text-slate-500`} />}</label>;
 }
