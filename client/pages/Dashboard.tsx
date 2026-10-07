@@ -390,6 +390,10 @@ export default function Dashboard() {
                   </div>
                 </section>
 
+                {deviceApproved && (
+                  <ApprovedDeviceSetup request={deviceRequest} onOpenInstructions={() => setDeviceInstructionsOpen(true)} />
+                )}
+
                 <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="progress-title">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -471,9 +475,7 @@ export default function Dashboard() {
                     </div>
                   </section>
 
-                  {deviceApproved ? (
-                    <ApprovedDeviceSetup request={deviceRequest} onOpenInstructions={() => setDeviceInstructionsOpen(true)} />
-                  ) : (
+                  {!deviceApproved && (
                     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="recent-activity-title">
                       <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><Activity size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Your account</p><h2 id="recent-activity-title" className="mt-0.5 text-sm font-extrabold text-navy">Recent Activity</h2></div></div>
                       {tasksLoading && notifications.length === 0 ? <p className="py-6 text-xs text-slate-400">Loading activity…</p> : recentActivity.length ? <ul className="mt-2 divide-y divide-slate-100">{recentActivity.map((activity) => <li key={activity.id} className="py-3"><p className="text-xs font-bold text-navy">{activity.title}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{activity.detail}</p><time className="mt-1 block text-[10px] text-slate-400" dateTime={activity.createdAt}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(activity.createdAt))}</time></li>)}</ul> : <p className="py-6 text-xs text-slate-500">{activityError ? "Unable to load recent activity." : "No recent contributor activity."}</p>}
