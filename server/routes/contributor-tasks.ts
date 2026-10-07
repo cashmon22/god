@@ -92,9 +92,21 @@ export const startContributorTask: RequestHandler = async (req, res) => {
     return;
   }
 
+  const productResearch = assignment.category === "Product Research";
   const { data, error } = await serviceSupabase
     .from("contributor_tasks")
-    .insert({ user_id: user.id, assignment_id: assignment.id })
+    .insert({
+      user_id: user.id,
+      assignment_id: assignment.id,
+      ...(productResearch ? {
+        status: "In Progress",
+        template_id: "product-research",
+        template_version: 1,
+        reward_min: 20,
+        reward_max: 100,
+        current_step: "product-information",
+      } : {}),
+    })
     .select(taskColumns)
     .single();
   if (error) {

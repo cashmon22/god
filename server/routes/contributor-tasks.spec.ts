@@ -70,7 +70,16 @@ describe("startContributorTask", () => {
     const result = await invoke(request({ assignmentId: "asg-001", userId: "attacker-id" }));
 
     expect(result.statusCode).toBe(201);
-    expect(inserted).toEqual({ user_id: user.id, assignment_id: "asg-001" });
+    expect(inserted).toEqual({
+      user_id: user.id,
+      assignment_id: "asg-001",
+      status: "In Progress",
+      template_id: "product-research",
+      template_version: 1,
+      reward_min: 20,
+      reward_max: 100,
+      current_step: "product-information",
+    });
   });
 
   it("requires an approved device", async () => {

@@ -30,6 +30,7 @@ import {
 import AssignmentsSection from "@/components/dashboard/AssignmentsSection";
 import AssignmentDetailDialog from "@/components/dashboard/AssignmentDetailDialog";
 import MyTasksSection from "@/components/dashboard/MyTasksSection";
+import ProductResearchWorkspace from "@/components/dashboard/ProductResearchWorkspace";
 import EarningsSection from "@/components/dashboard/EarningsSection";
 import ProfileSection from "@/components/dashboard/ProfileSection";
 import ReferEarnSection from "@/components/dashboard/ReferEarnSection";
@@ -155,6 +156,7 @@ export default function Dashboard() {
   const [trustedVendorOpen, setTrustedVendorOpen] = useState(false);
   const [deviceNotRecognizedOpen, setDeviceNotRecognizedOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [activeResearchTaskId, setActiveResearchTaskId] = useState<string | null>(null);
   const [isStartingTask, setIsStartingTask] = useState(false);
   const [taskStartError, setTaskStartError] = useState("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -496,7 +498,7 @@ export default function Dashboard() {
                 onSelectAssignment={(assignment) => { setSelectedAssignment(assignment); setTaskStartError(""); }}
               />
             )}
-            {activeItem === "My Tasks" && <MyTasksSection />}
+            {activeItem === "My Tasks" && (activeResearchTaskId ? <ProductResearchWorkspace taskId={activeResearchTaskId} onBack={() => setActiveResearchTaskId(null)} /> : <MyTasksSection onOpenResearchTask={setActiveResearchTaskId} />)}
             {activeItem === "Earnings" && <EarningsSection contributorId={contributorId} session={session} deviceVerified={deviceRequest?.status === "Approved"} kycVerified={kycVerified} onContactVendor={() => setTrustedVendorOpen(true)} onVerifyKyc={openKycInProfile} />}
             {activeItem === "Refer & Earn" && <ReferEarnSection />}
             {activeItem === "Profile" && <ProfileSection session={session} applicationStatus={applicationStatus} deviceStatus={deviceRequestLoading ? "Loading…" : deviceRequest?.status === "Approved" ? "Approved" : deviceRequest?.status ?? "Not Recognized"} paymentConfigured={paymentGatewayConfigured} isLoading={applicationLoading || deviceRequestLoading || earningsLoading} userId={session?.user.id ?? ""} deviceApproved={deviceApproved} kycOpen={profileKycOpen} onOpenKyc={openKycInProfile} onCloseKyc={() => setProfileKycOpen(false)} onOpenEarnings={() => selectNavItem("Earnings")} />}

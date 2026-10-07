@@ -36,6 +36,7 @@ const navigation: Array<{ label: string; href: string; icon: typeof LayoutDashbo
   { label: "Interview Management", href: "/admin/interviews", icon: ClipboardList, countKey: "pendingInterviews" },
   { label: "Device Requests", href: "/admin/device-requests", icon: ClipboardList, countKey: "pendingDeviceRequests" },
   { label: "KYC Verification", href: "/admin/kyc", icon: ShieldCheck, countKey: "pendingKyc" },
+  { label: "Product Research", href: "/admin/research-tasks", icon: ClipboardList },
   { label: "Messages", href: "/admin/messages", icon: MessageSquare },
   { label: "Devices", href: "/admin/devices", icon: Monitor },
   { label: "SEO Center", href: "/admin/seo", icon: SearchCheck },

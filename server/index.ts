@@ -48,6 +48,8 @@ import {
   markNotificationRead,
 } from "./routes/notifications";
 import { listContributorTasks, startContributorTask } from "./routes/contributor-tasks";
+import { acceptResearchTask, getContributorResearchTask, listContributorResearchTasks, saveContributorResearchTask, submitContributorResearchTask } from "./routes/research-tasks";
+import { createAdminResearchTask, getAdminResearchTask, listAdminResearchTasks, reviewAdminResearchTask } from "./routes/admin-research-tasks";
 import { getContributorReferrals } from "./routes/referrals";
 import { acknowledgePolicy, listAdminPolicies, listMyPolicyAcknowledgements, listPublicPolicies, saveAdminPolicy } from "./routes/legal";
 import { getAdminSiteSettings, getPublicSiteSettings, updateAdminSiteSettings } from "./routes/site-settings";
@@ -121,6 +123,10 @@ export function createServer() {
     updatePaymentRequestStatus,
   );
   app.delete("/api/admin/payment-requests/:id", deletePaymentRequest);
+  app.get("/api/admin/research-tasks", listAdminResearchTasks);
+  app.post("/api/admin/research-tasks", createAdminResearchTask);
+  app.get("/api/admin/research-tasks/:id", getAdminResearchTask);
+  app.post("/api/admin/research-tasks/:id/review", reviewAdminResearchTask);
   app.get("/api/admin/dashboard-stats", getAdminDashboardStats);
   app.get("/api/admin/review-counts", getAdminReviewCounts);
   app.get("/api/admin/users", listAdminUsers);
@@ -189,6 +195,11 @@ export function createServer() {
   app.patch("/api/notifications/read-all", markAllNotificationsRead);
   app.get("/api/contributor/tasks", listContributorTasks);
   app.post("/api/contributor/tasks", startContributorTask);
+  app.get("/api/contributor/research-tasks", listContributorResearchTasks);
+  app.post("/api/contributor/research-tasks/:id/accept", acceptResearchTask);
+  app.get("/api/contributor/research-tasks/:id", getContributorResearchTask);
+  app.patch("/api/contributor/research-tasks/:id", saveContributorResearchTask);
+  app.post("/api/contributor/research-tasks/:id/submit", submitContributorResearchTask);
 
   return app;
 }
