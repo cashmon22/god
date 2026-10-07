@@ -37,6 +37,7 @@ import RequiredPolicyPrompt from "@/components/dashboard/RequiredPolicyPrompt";
 import SupportSection from "@/components/dashboard/SupportSection";
 import DeviceNotRecognizedModal from "@/components/dashboard/DeviceNotRecognizedModal";
 import ApprovedDeviceInstructions from "@/components/dashboard/ApprovedDeviceInstructions";
+import ApprovedDeviceSetup from "@/components/dashboard/ApprovedDeviceSetup";
 import MessagesSection from "@/components/dashboard/MessagesSection";
 import VendorChat from "@/components/dashboard/VendorChat";
 import NotificationCenter from "@/components/NotificationCenter";
@@ -471,11 +472,7 @@ export default function Dashboard() {
                   </section>
 
                   {deviceApproved ? (
-                    <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="device-setup-title">
-                      <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"><CheckCircle2 size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Approved device</p><h2 id="device-setup-title" className="mt-0.5 text-sm font-extrabold text-navy">Device Setup</h2></div></div>
-                      <p className="mt-4 text-xs leading-5 text-slate-600">Your device has been approved and is ready for setup.</p>
-                      <button type="button" onClick={() => setDeviceInstructionsOpen(true)} className="mt-5 inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#1d3042]">View Instructions <ArrowRight size={14} /></button>
-                    </section>
+                    <ApprovedDeviceSetup request={deviceRequest} onOpenInstructions={() => setDeviceInstructionsOpen(true)} />
                   ) : (
                     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="recent-activity-title">
                       <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><Activity size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Your account</p><h2 id="recent-activity-title" className="mt-0.5 text-sm font-extrabold text-navy">Recent Activity</h2></div></div>

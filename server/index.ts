@@ -68,6 +68,7 @@ import {
   updateInterviewStatus,
 } from "./routes/interviews";
 import { getContributorEarnings } from "./routes/contributor-earnings";
+import { getAdminBankingDetails, getMyBankingDetailsStatus, submitBankingDetails } from "./routes/banking-details";
 import { createKycDraft, getAdminKyc, getAdminKycInstructions, getKycInstructions, getMyKyc, getMyKycStatus, listAdminKyc, reviewKyc, saveAdminKycInstructions, saveKycDraft, submitKyc, uploadKycFile } from "./routes/kyc";
 
 export function createServer() {
@@ -112,6 +113,9 @@ export function createServer() {
   app.use("/api/notifications", requireInterviewApproval);
   app.post("/api/payment-requests", createPaymentRequest);
   app.get("/api/payment-requests", listPaymentRequests);
+  app.get("/api/payment-requests/:id/banking-details", getMyBankingDetailsStatus);
+  app.post("/api/payment-requests/:id/banking-details", submitBankingDetails);
+  app.get("/api/admin/payment-requests/:id/banking-details", getAdminBankingDetails);
   app.patch(
     "/api/admin/payment-requests/:id/status",
     updatePaymentRequestStatus,

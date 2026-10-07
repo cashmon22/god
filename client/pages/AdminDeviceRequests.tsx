@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import type { PaymentRequest, PaymentRequestStatus } from "@shared/payment-requests";
 import { deletePaymentRequest, listPaymentRequests, updatePaymentRequestStatus } from "@/lib/payment-requests";
+import { getAdminBankingDetails, type AdminBankingDetails } from "@/lib/banking-details";
 
 const statusFilters = ["All", "Under Review", "Approved", "Rejected"] as const;
 type StatusFilter = (typeof statusFilters)[number];
@@ -66,6 +67,9 @@ export default function AdminDeviceRequests() {
   const [submittedSearch, setSubmittedSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<StatusFilter>("All");
   const [selectedRequest, setSelectedRequest] = useState<PaymentRequest | null>(null);
+  const [bankingReview, setBankingReview] = useState<AdminBankingDetails | null>(null);
+  const [bankingReviewLoading, setBankingReviewLoading] = useState(false);
+  const [bankingReviewError, setBankingReviewError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState("");
@@ -86,6 +90,24 @@ export default function AdminDeviceRequests() {
   };
 
   useEffect(() => { void loadRequests(); }, []);
+
+  useEffect(() => {
+    if (!selectedRequest) {
+      setBankingReview(null);
+      return;
+    }
+    let active = true;
+    setBankingReviewLoading(true);
+    setBankingReviewError("");
+    void getAdminBankingDetails(selectedRequest.id).then((review) => {
+      if (active) setBankingReview(review);
+    }).catch((loadError) => {
+      if (active) setBankingReviewError(loadError instanceof Error ? loadError.message : "Unable to load payment review details.");
+    }).finally(() => {
+      if (active) setBankingReviewLoading(false);
+    });
+    return () => { active = false; };
+  }, [selectedRequest?.id, selectedRequest?.status]);
 
   const filteredRequests = useMemo(() => {
     const query = submittedSearch.trim().toLowerCase();
@@ -353,6 +375,22 @@ export default function AdminDeviceRequests() {
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="mt-5">
+              <h4 className="text-xs font-extrabold uppercase tracking-wide text-slate-500">Payment and verification</h4>
+              {bankingReviewLoading ? <p className="mt-3 rounded-lg border border-slate-200 bg-[#fbfcfd] p-4 text-xs text-slate-500">Loading payment details…</p> : bankingReviewError ? <p className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4 text-xs text-red-800" role="alert">{bankingReviewError}</p> : bankingReview && (
+                <div className="mt-3 space-y-4 rounded-lg border border-slate-200 bg-[#fbfcfd] p-5">
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <DetailField label="Payment status" value={bankingReview.paymentStatus} />
+                    <DetailField label="KYC status" value={bankingReview.kycStatus} />
+                    <DetailField label="Banking details" value={bankingReview.submitted ? "Submitted" : "Not submitted"} />
+                    <DetailField label="Submission date" value={bankingReview.submittedAt ? formatDate(bankingReview.submittedAt) : "—"} />
+                    <DetailField label="Device approval status" value={bankingReview.deviceApprovalStatus} />
+                  </div>
+                  {bankingReview.bankingDetails && <div className="border-t border-slate-200 pt-4"><h5 className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-400">Submitted check payment information</h5><div className="mt-3 grid gap-4 sm:grid-cols-2"><DetailField label="Check payee name" value={bankingReview.bankingDetails.payeeName} /><DetailField label="Mailing address" value={[bankingReview.bankingDetails.addressLine1, bankingReview.bankingDetails.addressLine2, bankingReview.bankingDetails.city, bankingReview.bankingDetails.stateProvince, bankingReview.bankingDetails.postalCode, bankingReview.bankingDetails.country].filter(Boolean).join(", ")} /></div></div>}
+                </div>
+              )}
             </div>
 
             {/* Admin actions */}
