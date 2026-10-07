@@ -77,18 +77,18 @@ export default function ApprovedDeviceSetup({ request, onOpenInstructions }: { r
   return <>
     <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="device-setup-title">
       <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"><CheckCircle2 size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Approved device</p><h2 id="device-setup-title" className="mt-0.5 text-sm font-extrabold text-navy">Device Setup</h2></div></div>
-      <p className="mt-4 text-xs leading-5 text-slate-600">Your device has been approved and is ready for setup.</p>
-      {submitted ? (
-        <p className="mt-4 inline-flex items-center gap-2 text-xs font-extrabold text-emerald-700" role="status"><CircleCheck size={15} /> Banking Details Submitted ✓</p>
-      ) : (
-        <button type="button" onClick={() => { setError(""); setIsFormOpen(true); }} disabled={isLoading || isSaving} className="mt-4 inline-flex items-center gap-2 rounded-md border border-orange/40 bg-orange/10 px-4 py-2.5 text-xs font-extrabold text-navy transition hover:bg-orange/20 disabled:cursor-wait disabled:opacity-60">Submit Your Banking Details <ArrowRight size={14} /></button>
-      )}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button type="button" onClick={onOpenInstructions} disabled={!submitted || isLoading} aria-disabled={!submitted || isLoading} className="inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#1d3042] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:hover:bg-slate-200">
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+        {submitted ? (
+          <p className="inline-flex items-center gap-2 text-xs font-extrabold text-emerald-700" role="status"><CircleCheck size={15} /> Banking Details Submitted ✓</p>
+        ) : (
+          <button type="button" onClick={() => { setError(""); setIsFormOpen(true); }} disabled={isLoading || isSaving} className="inline-flex items-center justify-center gap-2 rounded-md border border-orange/40 bg-orange/10 px-4 py-2.5 text-xs font-extrabold text-navy transition hover:bg-orange/20 disabled:cursor-wait disabled:opacity-60">Submit Your Banking Details <ArrowRight size={14} /></button>
+        )}
+        <button type="button" onClick={onOpenInstructions} disabled={!submitted || isLoading} aria-disabled={!submitted || isLoading} className="inline-flex items-center justify-center gap-2 rounded-md bg-navy px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#1d3042] disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500 disabled:hover:bg-slate-200">
           {!submitted && <LockKeyhole size={14} />} View Instructions {submitted && <ArrowRight size={14} />}
         </button>
         {isLoading && <span className="text-[11px] text-slate-400">Checking submission status…</span>}
       </div>
+      <p className="mt-4 text-xs leading-5 text-slate-600">Your device has been approved and is ready for setup.</p>
       {error && !isFormOpen && <p className="mt-3 text-xs text-red-700" role="alert">{error}</p>}
     </section>
 
