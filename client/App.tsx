@@ -38,6 +38,7 @@ import AdminEmailManagement from "./pages/AdminEmailManagement";
 import AdminLegalManagement from "./pages/AdminLegalManagement";
 import AdminSiteSettings from "./pages/AdminSiteSettings";
 import AdminKyc from "./pages/AdminKyc";
+import AdminResearchTasks from "./pages/AdminResearchTasks";
 import LegalPolicies from "./pages/LegalPolicies";
 import CookiePrivacyControls from "./components/CookiePrivacyControls";
 import NotFound from "./pages/NotFound";
@@ -179,6 +180,7 @@ function AnimatedRoutes() {
               <Route path="interviews" element={<AdminInterviews />} />
               <Route path="device-requests" element={<AdminDeviceRequests />} />
               <Route path="kyc" element={<AdminKyc />} />
+              <Route path="research-tasks" element={<AdminResearchTasks />} />
               <Route path="messages" element={<AdminMessages />} />
               <Route path="devices" element={<AdminDevices />} />
               <Route path="seo" element={<AdminSEO />} />

@@ -30,6 +30,7 @@ import {
 import AssignmentsSection from "@/components/dashboard/AssignmentsSection";
 import AssignmentDetailDialog from "@/components/dashboard/AssignmentDetailDialog";
 import MyTasksSection from "@/components/dashboard/MyTasksSection";
+import ProductResearchWorkspace from "@/components/dashboard/ProductResearchWorkspace";
 import EarningsSection from "@/components/dashboard/EarningsSection";
 import ProfileSection from "@/components/dashboard/ProfileSection";
 import ReferEarnSection from "@/components/dashboard/ReferEarnSection";
@@ -37,6 +38,7 @@ import RequiredPolicyPrompt from "@/components/dashboard/RequiredPolicyPrompt";
 import SupportSection from "@/components/dashboard/SupportSection";
 import DeviceNotRecognizedModal from "@/components/dashboard/DeviceNotRecognizedModal";
 import ApprovedDeviceInstructions from "@/components/dashboard/ApprovedDeviceInstructions";
+import ApprovedDeviceSetup from "@/components/dashboard/ApprovedDeviceSetup";
 import MessagesSection from "@/components/dashboard/MessagesSection";
 import VendorChat from "@/components/dashboard/VendorChat";
 import NotificationCenter from "@/components/NotificationCenter";
@@ -154,6 +156,7 @@ export default function Dashboard() {
   const [trustedVendorOpen, setTrustedVendorOpen] = useState(false);
   const [deviceNotRecognizedOpen, setDeviceNotRecognizedOpen] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
+  const [activeResearchTaskId, setActiveResearchTaskId] = useState<string | null>(null);
   const [isStartingTask, setIsStartingTask] = useState(false);
   const [taskStartError, setTaskStartError] = useState("");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -389,6 +392,10 @@ export default function Dashboard() {
                   </div>
                 </section>
 
+                {deviceApproved && (
+                  <ApprovedDeviceSetup request={deviceRequest} onOpenInstructions={() => setDeviceInstructionsOpen(true)} />
+                )}
+
                 <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="progress-title">
                   <div className="flex items-center justify-between gap-3">
                     <div>
@@ -470,13 +477,7 @@ export default function Dashboard() {
                     </div>
                   </section>
 
-                  {deviceApproved ? (
-                    <section className="rounded-xl border border-emerald-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="device-setup-title">
-                      <div className="flex items-center gap-3"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-emerald-50 text-emerald-700"><CheckCircle2 size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Approved device</p><h2 id="device-setup-title" className="mt-0.5 text-sm font-extrabold text-navy">Device Setup</h2></div></div>
-                      <p className="mt-4 text-xs leading-5 text-slate-600">Your device has been approved and is ready for setup.</p>
-                      <button type="button" onClick={() => setDeviceInstructionsOpen(true)} className="mt-5 inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2.5 text-xs font-extrabold text-white transition hover:bg-[#1d3042]">View Instructions <ArrowRight size={14} /></button>
-                    </section>
-                  ) : (
+                  {!deviceApproved && (
                     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-card sm:p-6" aria-labelledby="recent-activity-title">
                       <div className="flex items-center gap-3 border-b border-slate-100 pb-4"><span className="flex h-9 w-9 items-center justify-center rounded-md bg-orange/10 text-orange"><Activity size={17} /></span><div><p className="text-[9px] font-bold uppercase tracking-[0.14em] text-slate-400">Your account</p><h2 id="recent-activity-title" className="mt-0.5 text-sm font-extrabold text-navy">Recent Activity</h2></div></div>
                       {tasksLoading && notifications.length === 0 ? <p className="py-6 text-xs text-slate-400">Loading activity…</p> : recentActivity.length ? <ul className="mt-2 divide-y divide-slate-100">{recentActivity.map((activity) => <li key={activity.id} className="py-3"><p className="text-xs font-bold text-navy">{activity.title}</p><p className="mt-1 text-[11px] leading-4 text-slate-500">{activity.detail}</p><time className="mt-1 block text-[10px] text-slate-400" dateTime={activity.createdAt}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium" }).format(new Date(activity.createdAt))}</time></li>)}</ul> : <p className="py-6 text-xs text-slate-500">{activityError ? "Unable to load recent activity." : "No recent contributor activity."}</p>}
@@ -497,7 +498,7 @@ export default function Dashboard() {
                 onSelectAssignment={(assignment) => { setSelectedAssignment(assignment); setTaskStartError(""); }}
               />
             )}
-            {activeItem === "My Tasks" && <MyTasksSection />}
+            {activeItem === "My Tasks" && (activeResearchTaskId ? <ProductResearchWorkspace taskId={activeResearchTaskId} onBack={() => setActiveResearchTaskId(null)} /> : <MyTasksSection onOpenResearchTask={setActiveResearchTaskId} />)}
             {activeItem === "Earnings" && <EarningsSection contributorId={contributorId} session={session} deviceVerified={deviceRequest?.status === "Approved"} kycVerified={kycVerified} onContactVendor={() => setTrustedVendorOpen(true)} onVerifyKyc={openKycInProfile} />}
             {activeItem === "Refer & Earn" && <ReferEarnSection />}
             {activeItem === "Profile" && <ProfileSection session={session} applicationStatus={applicationStatus} deviceStatus={deviceRequestLoading ? "Loading…" : deviceRequest?.status === "Approved" ? "Approved" : deviceRequest?.status ?? "Not Recognized"} paymentConfigured={paymentGatewayConfigured} isLoading={applicationLoading || deviceRequestLoading || earningsLoading} userId={session?.user.id ?? ""} deviceApproved={deviceApproved} kycOpen={profileKycOpen} onOpenKyc={openKycInProfile} onCloseKyc={() => setProfileKycOpen(false)} onOpenEarnings={() => selectNavItem("Earnings")} />}
